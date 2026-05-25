@@ -19,6 +19,8 @@ const folhaRoutes     = require('./routes/folha');
 const configRoutes    = require('./routes/config');
 const dashboardRoutes = require('./routes/dashboard');
 const hubRoutes       = require('./routes/hub');
+const dbRoutes        = require('./routes/db');
+const tinyRoutes      = require('./routes/tiny');
 
 const app    = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -148,6 +150,9 @@ app.use('/api/folha',     apiLimiter,  folhaRoutes);
 app.use('/api/config',    apiLimiter,  configRoutes);
 app.use('/api/dashboard', apiLimiter,  dashboardRoutes);
 app.use('/api/hub',       apiLimiter,  hubRoutes);
+// Supabase-backed routes (funcionam em produção sem MySQL)
+app.use('/api/db',        apiLimiter,  noCache, dbRoutes);
+app.use('/api/tiny',      apiLimiter,  tinyRoutes);
 
 // ── Frontend fallback ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

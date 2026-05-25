@@ -488,9 +488,6 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <div class="login-err" id="login-err"><i class="fa-solid fa-circle-exclamation"></i><span id="login-err-msg">Credenciais inválidas.</span></div>
       <div class="fg"><label>Usuário</label><div class="iw"><i class="fa-regular fa-user"></i><input type="text" id="inp-user" placeholder="seu.usuario" autocomplete="off"></div></div>
       <div class="fg"><label>Senha</label><div class="iw"><i class="fa-solid fa-lock"></i><input type="password" id="inp-pass" placeholder="••••••••"></div></div>
-      <div class="fg"><label>Perfil</label><div class="iw"><i class="fa-solid fa-shield-halved"></i>
-        <select id="inp-role"><option value="">Selecione</option><option value="admin">Admin</option><option value="gerente">Gerente</option><option value="vendedor">Vendedor</option></select>
-      </div></div>
       <button class="btn-login" id="btn-login-main" onclick="handleLogin()">
         <i class="fa-solid fa-circle-notch fa-spin" id="login-spin" style="display:none;margin-right:7px"></i>
         <i class="fa-solid fa-arrow-right-to-bracket" id="login-icon" style="margin-right:7px"></i>Entrar no Hub
@@ -1651,7 +1648,7 @@ function gasRun(fn, ...args) {
 const S = {
   formula: { custos:22.18, cartao:6.00 },
   users: [
-    { id:'u1', login:'muriloroberto', senha:'Flamengosub20$', nome:'Murilo Roberto', role:'admin', ativo:true },
+    // Usuários carregados via /api/auth/me — sem credenciais hardcoded
   ],
   boletos_p: [
     { id:'b1', fornecedor:'Impala Cosmeticos', valor:3200, vencimento:'2026-05-05', status:'vencido',  obs:'NF 1234' },
@@ -1744,12 +1741,12 @@ function saveLocalData(){
       try{payload[k.replace('donna_','')]=JSON.parse(localStorage.getItem(k));}catch{}
     }
   }
-  fetch('/api/db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
+  fetch('/api/db',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)}).catch(()=>{});
 }
 
 async function syncFromServer(){
   try{
-    const r=await fetch('/api/db');
+    const r=await fetch('/api/db',{credentials:'include'});
     if(!r.ok)return;
     const {ok,data}=await r.json();
     if(!ok||!data||!Object.keys(data).length)return;
@@ -1887,21 +1884,29 @@ const BCS    = {dashboard:'Operacional',calculadora:'Apoio a Venda',tiny:'Operac
 async function handleLogin() {
   const u=document.getElementById('inp-user').value.trim().toLowerCase();
   const p=document.getElementById('inp-pass').value;
-  const r=document.getElementById('inp-role').value;
-  if(!r){showLoginErr('Selecione um perfil');return;}
+  if(!u||!p){showLoginErr('Preencha usuário e senha');return;}
   setLoading(true);
   try {
-    const res=await gasRun('login',u,p,r);
-    if(!res.ok){setLoading(false);showLoginErr(res.msg||'Credenciais invalidas');return;}
-    S.currentUser=res.user;
+    const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({login:u,senha:p})});
+    const data=await res.json();
+    if(!data.ok){setLoading(false);showLoginErr(data.msg||'Credenciais inválidas');return;}
+    S.currentUser=data.user;
     persist();
     bootApp();
-  } catch(e){setLoading(false);showLoginErr('Erro: '+e.message);}
+  } catch(e){setLoading(false);showLoginErr('Erro de conexão. Verifique sua internet.');}
 }
 function showLoginErr(msg){const e=document.getElementById('login-err');document.getElementById('login-err-msg').textContent=msg;e.style.display='flex';}
 function setLoading(on){document.getElementById('login-spin').style.display=on?'inline-block':'none';document.getElementById('login-icon').style.display=on?'none':'inline';document.getElementById('btn-login-main').disabled=on;}
 // quickLogin removido - use credenciais reais via API
-function logout(){S.currentUser=null;localStorage.removeItem('donnaSession');document.getElementById('app-screen').style.display='none';document.getElementById('login-screen').style.display='flex';document.getElementById('inp-pass').value='';document.getElementById('login-err').style.display='none';}
+async function logout(){
+  try{await fetch('/api/auth/logout',{method:'POST',credentials:'include'});}catch(_){}
+  S.currentUser=null;
+  localStorage.removeItem('donnaSession');
+  document.getElementById('app-screen').style.display='none';
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('inp-pass').value='';
+  document.getElementById('login-err').style.display='none';
+}
 
 /* -- BOOT ------------------------------------------- */
 async function bootApp() {
@@ -4205,14 +4210,22 @@ function persist(){try{if(S.currentUser)localStorage.setItem('donnaSession',JSON
 /* -- INIT -- */
 (async function init(){
   document.getElementById('inp-pass').addEventListener('keydown',e=>{if(e.key==='Enter')handleLogin();});
+  document.getElementById('inp-user').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('inp-pass').focus();});
   document.getElementById('chat-inp').addEventListener('keydown',e=>{if(e.key==='Enter')sendMsg();});
   loadLocalData();
-  await syncFromServer(); // carrega dados do arquivo donna_data.json (persiste entre sessões)
+  // Restaura sessão via cookie HttpOnly (não localStorage — seguro contra XSS)
   try{
-    const s=JSON.parse(localStorage.getItem('donnaSession')||'null');
-    if(s){const u=S.users.find(x=>x.login===s.login&&x.role===s.role&&x.ativo);if(u){S.currentUser=u;bootApp();return;}}
+    const me=await fetch('/api/auth/me',{credentials:'include'});
+    if(me.ok){
+      const{user}=await me.json();
+      S.currentUser=user;
+      await syncFromServer();
+      bootApp();
+      return;
+    }
   }catch(_){}
-  document.getElementById('l-col').textContent=S.users.length;
+  // Sem sessão ativa — mostra tela de login
+  document.getElementById('login-screen').style.display='flex';
 })();
 
 // ══════════════════════════════════════════════════════
