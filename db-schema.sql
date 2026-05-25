@@ -1,0 +1,160 @@
+-- SQL de criação para banco relacional (MySQL)
+
+CREATE TABLE `users` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `login` VARCHAR(50) NOT NULL UNIQUE,
+  `senha` VARCHAR(255) NOT NULL,
+  `nome` VARCHAR(120) NOT NULL,
+  `role` ENUM('admin','gerente','vendedor') NOT NULL,
+  `ativo` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `clientes` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `nome` VARCHAR(160) NOT NULL,
+  `tipo` VARCHAR(40) NOT NULL,
+  `telefone` VARCHAR(40),
+  `email` VARCHAR(120),
+  `endereco` VARCHAR(220),
+  `cpf_cnpj` VARCHAR(30),
+  `obs` TEXT,
+  `ativo` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `boletos_pagar` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `fornecedor` VARCHAR(160) NOT NULL,
+  `valor` DECIMAL(12,2) NOT NULL,
+  `vencimento` DATE NOT NULL,
+  `status` ENUM('pendente','pago','vencido') NOT NULL DEFAULT 'pendente',
+  `obs` TEXT,
+  `created_by` BIGINT UNSIGNED NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`created_by`),
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `boletos_receber` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `cliente_id` BIGINT UNSIGNED NULL,
+  `valor` DECIMAL(12,2) NOT NULL,
+  `vencimento` DATE NOT NULL,
+  `status` ENUM('pendente','recebido','atrasado') NOT NULL DEFAULT 'pendente',
+  `pedido` VARCHAR(80),
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`cliente_id`),
+  FOREIGN KEY (`cliente_id`) REFERENCES `clientes`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `tasks` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `titulo` VARCHAR(180) NOT NULL,
+  `descricao` TEXT,
+  `collab_id` BIGINT UNSIGNED NOT NULL,
+  `prazo` DATE,
+  `prio` ENUM('alta','media','baixa') NOT NULL DEFAULT 'media',
+  `done` TINYINT(1) NOT NULL DEFAULT 0,
+  `delegado_por_id` BIGINT UNSIGNED,
+  `recorrente` TINYINT(1) NOT NULL DEFAULT 0,
+  `intervalo_dias` SMALLINT UNSIGNED,
+  `proxima_execucao` DATE,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`collab_id`),
+  INDEX (`delegado_por_id`),
+  FOREIGN KEY (`collab_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`delegado_por_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `metas` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `colaborador_id` BIGINT UNSIGNED NOT NULL,
+  `mes` VARCHAR(7) NOT NULL,
+  `meta_valor` DECIMAL(12,2) NOT NULL,
+  `realizado` DECIMAL(12,2) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`colaborador_id`),
+  FOREIGN KEY (`colaborador_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `processos` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `titulo` VARCHAR(180) NOT NULL,
+  `categoria` VARCHAR(60) NOT NULL,
+  `conteudo` TEXT NOT NULL,
+  `autor_id` BIGINT UNSIGNED,
+  `criado_em` DATE NOT NULL,
+  `atualizado_em` DATE NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX (`autor_id`),
+  FOREIGN KEY (`autor_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `entregas` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `data` DATE NOT NULL,
+  `cliente_id` BIGINT UNSIGNED NULL,
+  `descricao` TEXT,
+  `valor_cobrado` DECIMAL(12,2) NOT NULL,
+  `valor_uber` DECIMAL(12,2) NOT NULL,
+  `status` VARCHAR(40) NOT NULL DEFAULT 'realizada',
+  `obs` TEXT,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`cliente_id`),
+  FOREIGN KEY (`cliente_id`) REFERENCES `clientes`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `folha` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `colaborador_id` BIGINT UNSIGNED NOT NULL,
+  `mes` VARCHAR(7) NOT NULL,
+  `salario_base` DECIMAL(12,2) NOT NULL,
+  `comissao` DECIMAL(12,2) NOT NULL DEFAULT 0,
+  `bonus` DECIMAL(12,2) NOT NULL DEFAULT 0,
+  `descontos` DECIMAL(12,2) NOT NULL DEFAULT 0,
+  `total_liquido` DECIMAL(12,2) NOT NULL,
+  `obs` TEXT,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`colaborador_id`),
+  FOREIGN KEY (`colaborador_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `hub_data` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `categoria` VARCHAR(80) NOT NULL DEFAULT 'geral',
+  `titulo` VARCHAR(160) NOT NULL,
+  `conteudo` TEXT NOT NULL,
+  `meta` TEXT,
+  `ativo` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_by` BIGINT UNSIGNED NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`categoria`),
+  INDEX (`created_by`),
+  FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `config` (
+  `config_key` VARCHAR(80) NOT NULL,
+  `config_value` TEXT,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`config_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

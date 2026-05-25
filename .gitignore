@@ -1,0 +1,30 @@
+.vercel
+
+# Dependências
+node_modules/
+backend/node_modules/
+
+# Ambiente e segredos
+.env
+.env.local
+.env.production
+*.env
+
+# Dados locais (contém dados reais de clientes)
+donna_data.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Editor
+.vscode/
+.idea/
+
+# Temporários
+tmp_*
+*.tmp
