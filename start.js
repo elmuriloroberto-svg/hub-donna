@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
 
 require('dotenv').config();
 
@@ -13,7 +14,8 @@ const TINY_BASE = 'https://api.tiny.com.br/api2';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
+  process.env.SUPABASE_SERVICE_KEY,
+  { realtime: { transport: WebSocket } }
 );
 
 async function readDB() {
