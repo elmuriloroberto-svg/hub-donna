@@ -2,23 +2,39 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
 const FILE = path.join(__dirname, 'donna_hub_v3_index (6).html');
-const DB_FILE = path.join(__dirname, 'donna_data.json');
 const TINY_TOKEN = process.env.TINY_TOKEN;
 const TINY_BASE = 'https://api.tiny.com.br/api2';
 
-function readDB() {
-  try { if (fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
-  catch {}
-  return {};
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+async function readDB() {
+  const { data, error } = await supabase.from('hub_config').select('config_key, config_value');
+  if (error || !data) return {};
+  const result = {};
+  for (const row of data) {
+    try { result[row.config_key] = JSON.parse(row.config_value); }
+    catch { result[row.config_key] = row.config_value; }
+  }
+  return result;
 }
-function writeDB(data) {
-  try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8'); return true; }
-  catch { return false; }
+
+async function writeDB(newData) {
+  const rows = Object.entries(newData).map(([k, v]) => ({
+    config_key: k,
+    config_value: typeof v === 'string' ? v : JSON.stringify(v),
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await supabase.from('hub_config').upsert(rows, { onConflict: 'config_key' });
+  return !error;
 }
 
 const cache = new Map();
@@ -529,7 +545,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/db' && req.method === 'GET') {
-    try { json(200, { ok: true, data: readDB() }); }
+    try { json(200, { ok: true, data: await readDB() }); }
     catch(e) { json(500, { ok: false, msg: e.message }); }
     return;
   }
@@ -537,10 +553,10 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/db' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const data = JSON.parse(body);
-        writeDB(data);
+        await writeDB(data);
         json(200, { ok: true });
       } catch(e) { json(400, { ok: false, msg: e.message }); }
     });
