@@ -583,13 +583,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('');
-  console.log('  Donna Unha Hub rodando!');
-  console.log('  Acesse: http://localhost:' + PORT);
-  console.log('');
-  console.log('  Login: muriloroberto');
-  console.log('  Senha: Flamengosub20$');
-  console.log('  Perfil: admin');
-  console.log('');
-  console.log('  Ctrl+C para parar.');
+  console.log(`\n  Donna Unha Hub (dev) rodando em http://localhost:${PORT}\n  Ctrl+C para parar.\n`);
 });

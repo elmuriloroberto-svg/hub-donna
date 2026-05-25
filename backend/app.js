@@ -1,7 +1,8 @@
-const express    = require('express');
-const cors       = require('cors');
-const helmet     = require('helmet');
-const path       = require('path');
+const express      = require('express');
+const cors         = require('cors');
+const helmet       = require('helmet');
+const cookieParser = require('cookie-parser');
+const path         = require('path');
 const { randomUUID } = require('crypto');
 
 const { apiLimiter, authLimiter } = require('./middleware/security');
@@ -110,6 +111,8 @@ app.use(
 // ── [ML-11] Limite de payload ─────────────────────────────────────────────────
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: false, limit: '10kb' }));
+// Cookie parser — necessário para req.cookies (leitura do JWT HttpOnly)
+app.use(cookieParser());
 
 // ── Arquivos estáticos ────────────────────────────────────────────────────────
 // dotfiles: 'deny' impede acesso a .env e similares via HTTP

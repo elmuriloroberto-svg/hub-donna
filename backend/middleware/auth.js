@@ -1,16 +1,23 @@
 const jwt = require('jsonwebtoken');
 
+const COOKIE_NAME = 'rubi_session';
+
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  // Cookie HttpOnly (primary — immune to XSS, never accessible from JavaScript)
+  const cookieToken = req.cookies?.[COOKIE_NAME];
+  // Authorization header (fallback — for dev tools and backward compat during transition)
+  const bearerToken = req.headers['authorization']?.startsWith('Bearer ')
+    ? req.headers['authorization'].slice(7)
+    : null;
+  const token = cookieToken || bearerToken;
 
   if (!token) {
-    return res.status(401).json({ ok: false, msg: 'Token não fornecido' });
+    return res.status(401).json({ ok: false, msg: 'Não autenticado. Faça login.' });
   }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ ok: false, msg: 'Token inválido ou expirado' });
+      return res.status(401).json({ ok: false, msg: 'Sessão expirada. Faça login novamente.' });
     }
     req.user = user;
     next();

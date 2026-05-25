@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -66,8 +66,8 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE hub entry
-router.put('/:id', authenticateToken, async (req, res) => {
+// UPDATE hub entry — apenas admin/gerente
+router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
     const { categoria, titulo, conteudo, meta, ativo } = req.body;
@@ -90,8 +90,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE hub entry
-router.delete('/:id', authenticateToken, async (req, res) => {
+// DELETE hub entry — apenas admin/gerente
+router.delete('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
     const connection = await db.getConnection();
