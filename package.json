@@ -8,7 +8,7 @@
     "vercel-build": "echo 'No build step required'"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.106.2",
+    "@supabase/postgrest-js": "^2.106.2",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -18,7 +18,6 @@
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.6.0",
-    "serverless-http": "^3.0.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {

@@ -1,21 +1,17 @@
-const { createClient } = require('@supabase/supabase-js');
+const { PostgrestClient } = require('@supabase/postgrest-js');
 
 let _client = null;
 
 function getSupabase() {
   if (!_client) {
-    // Node.js 22+ tem WebSocket nativo (Vercel usa Node 24)
-    // Em Node.js 20 local usamos ws via start.js separado
-    const opts = { auth: { persistSession: false, autoRefreshToken: false } };
-    if (typeof WebSocket === 'undefined') {
-      // Node.js < 22: injetar ws
-      try { opts.realtime = { transport: require('ws') }; } catch (_) {}
-    }
-    _client = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY,
-      opts
-    );
+    const url = `${process.env.SUPABASE_URL}/rest/v1`;
+    const key  = process.env.SUPABASE_SERVICE_KEY;
+    _client = new PostgrestClient(url, {
+      headers: {
+        apikey:        key,
+        Authorization: `Bearer ${key}`,
+      },
+    });
   }
   return _client;
 }

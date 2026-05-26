@@ -697,8 +697,8 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
                   <div class="ep-field"><label>Nome do produto</label><input type="text" id="ep-nome" placeholder="Ex: Esmalte Impala"></div>
                   <div class="ep-field"><label>SKU / Código</label><input type="text" id="ep-sku" placeholder="Ex: IMP-001"></div>
                   <div class="ep-field-row">
-                    <div class="ep-field"><label>Atacado (R$)</label><input type="text" id="ep-atacado" placeholder="4,99"></div>
                     <div class="ep-field"><label>Varejo (R$)</label><input type="text" id="ep-preco" placeholder="5,58"></div>
+                    <div class="ep-field"><label>Atacado (R$)</label><input type="text" id="ep-atacado" placeholder="4,99"></div>
                   </div>
                   <div class="ep-field"><label>Qtd. etiquetas</label><input type="number" id="ep-qtd" value="1" min="1" max="500"></div>
                   <button class="ep-btn ep-btn-accent ep-btn-full" onclick="epAddManual()">+ Adicionar à folha</button>
@@ -741,7 +741,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
                 </div>
                 <div class="ep-toggle-row">
                   <span style="font-size:12px;color:var(--ep-muted)">SKU / Código na etiqueta</span>
-                  <label class="ep-toggle"><input type="checkbox" id="ep-tog-sku" onchange="epRenderSheet()"><span class="ep-slider"></span></label>
+                  <label class="ep-toggle"><input type="checkbox" id="ep-tog-sku" checked onchange="epRenderSheet()"><span class="ep-slider"></span></label>
                 </div>
               </div>
             </aside>
@@ -1873,9 +1873,10 @@ const LOCAL = {
 
 /* -- RBAC ------------------------------------------- */
 const PERMS = {
-  admin:   ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','cultura','donnaIA','processos','metas','folha','vtvr','usuarios'],
-  gerente: ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','cultura','donnaIA','processos','metas'],
-  vendedor:['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA'],
+  admin:       ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','cultura','donnaIA','processos','metas','folha','vtvr','usuarios'],
+  gerente:     ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','cultura','donnaIA','processos','metas'],
+  vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA'],
+  colaborador: ['calculadora'],
 };
 const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Agenda de Tarefas',boletos:'Contas a Pagar',recebiveis:'Contas a Receber',clientes:'Clientes',crm:'CRM de Clientes',cultura:'Missao & Valores',donnaIA:'Donna IA',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Salário',vtvr:'VT & VR',usuarios:'Gerenciar Usuarios'};
 const BCS    = {dashboard:'Operacional',calculadora:'Apoio a Venda',tiny:'Operacional',agenda:'Operacional',boletos:'Financeiro',recebiveis:'Financeiro',clientes:'Financeiro',crm:'Financeiro',cultura:'Cultura & Treino',donnaIA:'Cultura & Treino',processos:'Administracao',metas:'Administracao',folha:'RH & Folha',vtvr:'RH & Folha',usuarios:'Administracao'};
@@ -1913,7 +1914,7 @@ async function bootApp() {
   const u=S.currentUser;
   document.getElementById('u-av').textContent=u.nome[0];
   document.getElementById('u-nm').textContent=u.nome;
-  document.getElementById('u-rl').textContent={admin:'Administrador',gerente:'Gerente',vendedor:'Vendedor(a)'}[u.role];
+  document.getElementById('u-rl').textContent={admin:'Administrador',gerente:'Gerente',vendedor:'Vendedor(a)',colaborador:'Colaboradora'}[u.role]||u.role;
   document.getElementById('tb-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
   applyRBAC(u.role);
   try{const cfg=await gasRun('getConfig');if(cfg.ok){S.formula.custos=parseFloat(cfg.data.custos_fixos)||22.18;S.formula.cartao=parseFloat(cfg.data.taxa_cartao)||6;const fc=document.getElementById('fp-custos');const ft=document.getElementById('fp-cartao');if(fc)fc.value=S.formula.custos;if(ft)ft.value=S.formula.cartao;}}catch(_){}
@@ -1926,7 +1927,9 @@ async function bootApp() {
   await Promise.all([loadDashboard(),loadBoletos(),loadEntregas(),loadTasks(),loadMetas(),loadFolha(),loadProcessos(),loadUsers(),loadClients(),loadCollabSelects()]);
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
-  nav('dashboard',document.querySelector('.nb.active'));
+  const _landPage=PERMS[u.role]?.[0]||'dashboard';
+  const _landBtn=_landPage==='dashboard'?document.querySelector('.nb.active'):document.getElementById('nb-'+_landPage);
+  nav(_landPage,_landBtn||document.querySelector('.nb'));
   // Checagem horária de vencimentos
   setInterval(notificarVencimentos, 60*60*1000);
   // Inicializa datas de entrada e dispara recalc via toggle
@@ -1944,6 +1947,7 @@ function applyRBAC(role) {
   document.querySelectorAll('.nb[id]').forEach(el=>{const pg=el.id.replace('nb-','');if(!allowed.includes(pg)){el.classList.add('locked');el.onclick=()=>toast('Acesso restrito ao seu perfil','fa-lock');}});
   if(role==='vendedor'){['ng-admin','nb-processos','nb-metas','nb-folha','nb-vtvr','nb-usuarios'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
   if(role==='gerente'){['nb-folha','nb-vtvr'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
+  if(role==='colaborador'){document.querySelectorAll('.sb-nav .nb, .sb-nav .ng-hd, .sb-nav .ng-div').forEach(el=>{if(el.id!=='nb-calculadora')el.style.display='none';});}
   const isManager=['admin','gerente'].includes(role);
   const apw=document.getElementById('fp-admin-wrap');const fvw=document.getElementById('fp-viewer-wrap');
   if(apw)apw.style.display=isManager?'block':'none';
@@ -2194,7 +2198,7 @@ function epRenderSheet() {
   const mgTop       = parseFloat(document.getElementById('ep-mg-top')?.value) || 13.0;
   const mgLeft      = parseFloat(document.getElementById('ep-mg-left')?.value)|| 7.0;
   const showAtacado = document.getElementById('ep-tog-atacado')?.checked ?? true;
-  const showSku     = document.getElementById('ep-tog-sku')?.checked ?? false;
+  const showSku     = document.getElementById('ep-tog-sku')?.checked ?? true;
 
   area.innerHTML = '';
   let labels = [];
@@ -2251,7 +2255,7 @@ function epPrint() {
   const mgTop       = parseFloat(document.getElementById('ep-mg-top')?.value)  || 13.0;
   const mgLeft      = parseFloat(document.getElementById('ep-mg-left')?.value) || 7.0;
   const showAtacado = document.getElementById('ep-tog-atacado')?.checked ?? true;
-  const showSku     = document.getElementById('ep-tog-sku')?.checked ?? false;
+  const showSku     = document.getElementById('ep-tog-sku')?.checked ?? true;
   const skip        = parseInt(document.getElementById('ep-skip')?.value) || 0;
 
   let labels = [];

@@ -1,4 +1,4 @@
-const serverless = require('serverless-http');
+console.log('[boot] start');
 const app = require('../backend/app');
-
-module.exports = serverless(app);
+console.log('[boot] app ready');
+module.exports = app;

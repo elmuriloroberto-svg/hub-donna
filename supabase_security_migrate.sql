@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS rubi_users (
   nome        TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role        TEXT NOT NULL DEFAULT 'vendedor'
-              CHECK (role IN ('admin', 'gerente', 'vendedor')),
+              CHECK (role IN ('admin', 'gerente', 'vendedor', 'colaborador')),
   ativo       BOOLEAN NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
