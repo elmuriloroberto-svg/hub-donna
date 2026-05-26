@@ -9,7 +9,7 @@ const { authenticateToken }      = require('../middleware/auth');
 const router = express.Router();
 
 const COOKIE_NAME    = 'rubi_session';
-const COOKIE_MAX_AGE = parseInt(process.env.JWT_EXPIRE_SECONDS || String(8 * 60 * 60));
+const COOKIE_MAX_AGE = parseInt(process.env.JWT_EXPIRE_SECONDS || String(24 * 60 * 60));
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
