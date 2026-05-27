@@ -60,7 +60,7 @@ router.post('/login', async (req, res) => {
     );
 
     // JWT em cookie HttpOnly — JavaScript não consegue ler, bloqueia XSS
-    setCookie(res, COOKIE_NAME, token, { maxAge: COOKIE_MAX_AGE });
+    setCookie(res, COOKIE_NAME, token, { maxAge: COOKIE_MAX_AGE * 1000 }); // Express expects ms
 
     // Token NÃO retornado no body — só role/nome para renderizar a UI
     res.json({
