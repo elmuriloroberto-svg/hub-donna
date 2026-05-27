@@ -46,7 +46,7 @@ router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
     if (existing && existing.length > 0)
       return res.status(400).json({ ok: false, msg: 'Login já existe' });
 
-    const password_hash = await bcrypt.hash(senha, 12);
+    const password_hash = await bcrypt.hash(senha, 10);
     const { error } = await sb.from('rubi_users').insert({ username: login, password_hash, nome, role });
     if (error) throw new Error(error.message);
 
