@@ -9,11 +9,15 @@ const TINY_BASE  = 'https://api.tiny.com.br/api2';
 const sleep      = ms => new Promise(r => setTimeout(r, ms));
 
 const cache = new Map();
-const CACHE_DASH = 10 * 60 * 1000;
-const CACHE_CRM  = 20 * 60 * 1000;
-const CACHE_GIRO =  2 * 60 * 60 * 1000;
-const CACHE_CLI  =  5 * 60 * 1000;
-const CACHE_HIST =  4 * 60 * 60 * 1000;
+const CACHE_DASH     = 10 * 60 * 1000;
+const CACHE_CRM      = 20 * 60 * 1000;
+const CACHE_GIRO     =  2 * 60 * 60 * 1000;
+const CACHE_CLI      =  5 * 60 * 1000;
+const CACHE_HIST     =  4 * 60 * 60 * 1000;
+const CACHE_CONTATOS = 60 * 60 * 1000;
+
+let _contatosCache = null;
+const normName = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +54,31 @@ async function fetchAllOrders(params, maxPags = 5) {
     await sleep(280);
   }
   return todos;
+}
+
+// Carrega TODOS os contatos do Tiny e monta mapa nome→{celular,telefone}
+// Resultado fica em cache por 1h — reutilizado por todas as chamadas CRM
+async function loadContatos() {
+  if (_contatosCache && Date.now() - _contatosCache.ts < CACHE_CONTATOS) {
+    return _contatosCache.data;
+  }
+  const map = {};
+  for (let pag = 1; pag <= 100; pag++) {
+    const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
+    if (r?.retorno?.status !== 'OK') break;
+    for (const item of (r.retorno.contatos || [])) {
+      const c = item.contato;
+      const cel = (c.celular || '').trim();
+      const tel = (c.fone || c.telefone || '').trim();
+      if (!cel && !tel) continue;
+      const key = normName(c.nome);
+      if (key) map[key] = { celular: cel, telefone: tel };
+    }
+    if (pag >= (r.retorno.numero_paginas || 1)) break;
+    await sleep(150);
+  }
+  _contatosCache = { ts: Date.now(), data: map };
+  return map;
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────────────────────
@@ -433,22 +462,25 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
     const cached = cache.get(KEY);
     if (cached && Date.now() - cached.ts < CACHE_CRM) return res.json({ ok: true, ...cached.data });
 
-    // 1. Define data inicial e máximo de páginas conforme período
-    const maxPags = periodo === 0 ? 30 : periodo <= 30 ? 5 : periodo <= 90 ? 10 : 15;
+    // 1. Busca orders E contatos em paralelo para reduzir tempo total
+    const maxPags = periodo === 0 ? 20 : periodo <= 30 ? 5 : periodo <= 90 ? 10 : 15;
     const params  = periodo > 0
       ? { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) }
-      : { dataInicial: '01/01/2020' }; // geral: desde o início
+      : { dataInicial: '01/01/2020' };
 
-    const orders = await fetchAllOrders(params, maxPags);
+    const [orders, contatoMap] = await Promise.all([
+      fetchAllOrders(params, maxPags),
+      loadContatos(),
+    ]);
 
-    // 2. Agrupa por cliente: rastreia datas, valor e qtd de pedidos
+    // 2. Agrupa por cliente
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const clienteMap = {};
     for (const p of orders) {
       const nome = (p.nome || '').trim();
       if (!nome || nome.toLowerCase() === 'consumidor final') continue;
-      const dt   = parseDateBR(p.data_pedido);
-      const val  = parseFloat(p.valor) || 0;
+      const dt  = parseDateBR(p.data_pedido);
+      const val = parseFloat(p.valor) || 0;
       if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0 };
       if (dt) {
         if (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo) clienteMap[nome].ultimo = dt;
@@ -458,21 +490,7 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       clienteMap[nome].qtd++;
     }
 
-    // 3. Carrega contatos para obter celular/telefone (até 8 páginas ~800 contatos)
-    const contatoMap = {};
-    for (let pag = 1; pag <= 8; pag++) {
-      const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
-      if (r?.retorno?.status !== 'OK') break;
-      for (const item of (r.retorno.contatos || [])) {
-        const c   = item.contato;
-        const key = (c.nome || '').trim().toLowerCase();
-        if (key) contatoMap[key] = { celular: c.celular || '', telefone: c.fone || c.telefone || '' };
-      }
-      if (pag >= (r.retorno.numero_paginas || 1)) break;
-      await sleep(280);
-    }
-
-    // 4. Classifica e monta lista final
+    // 3. Classifica e monta lista final
     const clientes = Object.values(clienteMap).map(c => {
       const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
       let temperatura;
@@ -491,7 +509,9 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       }
 
       const ticketMedio = c.qtd > 0 ? c.totalValor / c.qtd : 0;
-      const contato     = contatoMap[c.nome.toLowerCase()] || { celular: '', telefone: '' };
+      // Lookup por nome normalizado (sem acento, lowercase)
+      const nk      = normName(c.nome);
+      const contato = contatoMap[nk] || { celular: '', telefone: '' };
       return {
         nome:          c.nome,
         ultimo_pedido: c.ultimo ? formatDateBR(c.ultimo) : '—',
