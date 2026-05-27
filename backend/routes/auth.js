@@ -14,7 +14,7 @@ const COOKIE_MAX_AGE = parseInt(process.env.JWT_EXPIRE_SECONDS || String(24 * 60
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
-    const login = sanitizeStr(req.body.login, 100);
+    const login = (sanitizeStr(req.body.login, 100) || '').toLowerCase();
     const senha = sanitizeStr(req.body.senha, 128);
 
     if (!login || !senha) {

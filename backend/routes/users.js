@@ -29,7 +29,7 @@ router.get('/', authenticateToken, authorize('admin', 'gerente'), async (req, re
 // CREATE user
 router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
   try {
-    const login = sanitizeStr(req.body.login, 100);
+    const login = (sanitizeStr(req.body.login, 100) || '').toLowerCase();
     const senha = sanitizeStr(req.body.senha, 128);
     const nome  = sanitizeStr(req.body.nome, 150);
     const role  = sanitizeStr(req.body.role, 50);
