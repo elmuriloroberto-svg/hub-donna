@@ -26,7 +26,7 @@ function tinyGet(endpoint, params = {}) {
   const token = process.env.TINY_TOKEN;
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams({ token, formato: 'json', ...params }).toString();
-    https.get(`${TINY_BASE}/${endpoint}?${qs}`, (res) => {
+    const req = https.get(`${TINY_BASE}/${endpoint}?${qs}`, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
@@ -34,6 +34,8 @@ function tinyGet(endpoint, params = {}) {
         catch { reject(new Error('Resposta inválida da API Tiny')); }
       });
     }).on('error', reject);
+    // Timeout por chamada — evita pendurar a função Vercel indefinidamente
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('Tiny timeout')); });
   });
 }
 
@@ -103,7 +105,7 @@ async function _fetchContatos() {
     const totalPags = parseInt(r.retorno.numero_paginas) || 1;
     if (pag >= totalPags) break;
     pag++;
-    await sleep(320);
+    await sleep(100);
   }
   return map;
 }
@@ -623,7 +625,7 @@ function sortByTemp(arr) {
   );
 }
 
-// Responde imediatamente com cache (mesmo stale). Nunca bloqueia esperando o Tiny.
+// Blocking build — Vercel serverless cancela background tasks após res.end().
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   const periodo = Math.max(parseInt(req.query.periodo ?? '90'), 0);
   const KEY = `crm_temp_${periodo}`;
@@ -634,13 +636,10 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       if (hit.stale) swrBuild(KEY, () => _buildCrmTemp(periodo));
       return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
     }
-    // Sem cache: inicia build em background e retorna resposta de loading
-    swrBuild(KEY, () => _buildCrmTemp(periodo));
-    return loadingResponse(res,
-      periodo === 0
-        ? 'Carregando histórico completo de clientes (~2min)... Tente novamente em instantes.'
-        : `Carregando clientes dos últimos ${periodo} dias... Tente novamente em instantes.`
-    );
+    // Sem cache: aguarda build completo antes de responder
+    const data = await _buildCrmTemp(periodo);
+    cache.set(KEY, { ts: Date.now(), data });
+    return res.json({ ok: true, stale: false, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
   }
@@ -665,7 +664,10 @@ async function _buildCrmTemp(periodo) {
       cache.set('hist_5', { ts: Date.now(), data: histData });
     }
 
-    const contatoMap = await loadContatos();
+    const contatoMap = _contatosCache?.data || await _fetchContatos().then(d => {
+      _contatosCache = { ts: Date.now(), data: d };
+      return d;
+    });
     const clientes = sortByTemp(histData.map(h => {
       const nk = normName(h.nome);
       const ct = contatoMap[nk] || { celular: '', telefone: '' };
@@ -690,8 +692,10 @@ async function _buildCrmTemp(periodo) {
   // Períodos limitados (30 / 90 / 120 dias) — paginação completa sem limite artificial
   const params  = { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) };
   const [orders, contatoMap] = await Promise.all([
-    fetchAllOrders(params), // sem maxPags = paginação total
-    loadContatos(),
+    fetchAllOrders(params),
+    _contatosCache
+      ? Promise.resolve(_contatosCache.data)
+      : _fetchContatos().then(d => { _contatosCache = { ts: Date.now(), data: d }; return d; }),
   ]);
 
   const clienteMap = {};
