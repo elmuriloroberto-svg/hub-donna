@@ -233,6 +233,115 @@ router.get('/busca-giro', authenticateToken, async (req, res) => {
   } catch(e) { res.status(500).json({ ok: false, msg: e.message }); }
 });
 
+// ── PEDIDOS INTELIGENTES (ABC) ────────────────────────────────────────────────
+
+router.get('/pedidos-inteligentes', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+  try {
+    const q    = sanitizeStr(req.query.q || '', 100).trim();
+    const dias = Math.min(Math.max(parseInt(req.query.dias) || 60, 7), 180);
+    if (!q) return res.status(400).json({ ok: false, msg: 'Parâmetro q obrigatório' });
+
+    const cacheKey = `pi_${q.toLowerCase()}_${dias}`;
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_GIRO) return res.json({ ok: true, ...cached.data });
+
+    // 1. Catálogo com paginação completa
+    const catProdutos = [];
+    for (let pag = 1; ; pag++) {
+      const r = await tinyGet('produtos.pesquisa.php', { pesquisa: q, pagina: pag });
+      if (r?.retorno?.status !== 'OK') break;
+      catProdutos.push(...(r.retorno.produtos || []).map(p => p.produto));
+      if (pag >= (r.retorno.numero_paginas || 1)) break;
+      await sleep(300);
+    }
+    const catBySku = {};
+    for (const cp of catProdutos) { if (cp.codigo) catBySku[cp.codigo] = cp; }
+    const catSkus = new Set(Object.keys(catBySku));
+
+    // 2. Pedidos do período
+    const de = new Date(Date.now() - dias * 86400000);
+    const listaOrdens = await fetchAllOrders({ dataInicial: formatDateBR(de) }, 20);
+    const sample = listaOrdens.slice(0, 80);
+
+    // 3. Detalhe dos itens
+    const productMap = {};
+    for (const order of sample) {
+      try {
+        const det = await tinyGet('pedido.obter.php', { id: order.id });
+        const itens = det?.retorno?.pedido?.itens || [];
+        for (const i of itens) {
+          const item = i.item;
+          const sku = item.codigo || '';
+          const nomeLow = (item.descricao || '').toLowerCase();
+          if (!catSkus.has(sku) && !nomeLow.includes(q.toLowerCase())) continue;
+          const mk = sku || (item.descricao || '').substring(0, 60);
+          if (!mk) continue;
+          if (!productMap[mk]) productMap[mk] = { nome: item.descricao || mk, sku: sku || '—', qtd: 0, receita: 0, pedidos: 0 };
+          const qty = parseFloat(item.quantidade) || 1;
+          const price = parseFloat(item.valor_unitario) || 0;
+          productMap[mk].qtd += qty;
+          productMap[mk].receita += qty * price;
+          productMap[mk].pedidos++;
+        }
+      } catch {}
+      await sleep(300);
+    }
+
+    const fator = sample.length > 0 && listaOrdens.length > sample.length ? listaOrdens.length / sample.length : 1;
+
+    // 4. Monta lista de produtos
+    const seen = new Set();
+    const produtos = [];
+    for (const [mk, p] of Object.entries(productMap)) {
+      const sku = p.sku !== '—' ? p.sku : '';
+      if (sku) seen.add(sku);
+      const cat = catBySku[sku] || null;
+      const qtdPeriodo = Math.round(p.qtd * fator);
+      const mediaDiaria = qtdPeriodo / dias;
+      produtos.push({
+        nome: cat?.nome || p.nome, sku: p.sku, preco: parseFloat(cat?.preco) || 0,
+        qtd_periodo: qtdPeriodo, qtd_mes: Math.round(mediaDiaria * 30),
+        media_diaria: Math.round(mediaDiaria * 100) / 100,
+        receita_mes: Math.round(p.receita * fator / dias * 30),
+        no_catalogo: !!cat, sem_historico: false,
+      });
+    }
+    for (const cp of catProdutos) {
+      const sku = cp.codigo || '';
+      if (!sku || seen.has(sku)) continue;
+      produtos.push({
+        nome: cp.nome || sku, sku, preco: parseFloat(cp.preco) || 0,
+        qtd_periodo: 0, qtd_mes: 0, media_diaria: 0, receita_mes: 0,
+        no_catalogo: true, sem_historico: true,
+      });
+    }
+
+    // 5. Curva ABC por receita acumulada (80/95/100)
+    const COBERTURA = { A: 45, B: 30, C: 15 };
+    const comVenda = produtos.filter(p => p.receita_mes > 0).sort((a, b) => b.receita_mes - a.receita_mes);
+    const receitaTotal = comVenda.reduce((s, p) => s + p.receita_mes, 0);
+    let acum = 0;
+    for (const p of comVenda) {
+      acum += p.receita_mes;
+      const pct = receitaTotal > 0 ? acum / receitaTotal : 1;
+      p.curva = pct <= 0.80 ? 'A' : pct <= 0.95 ? 'B' : 'C';
+      p.dias_cobertura = COBERTURA[p.curva];
+    }
+    for (const p of produtos) {
+      if (!p.curva) { p.curva = 'C'; p.dias_cobertura = 15; }
+    }
+
+    produtos.sort((a, b) => ({ A: 0, B: 1, C: 2 }[a.curva] - { A: 0, B: 1, C: 2 }[b.curva]) || (b.qtd_mes - a.qtd_mes));
+
+    const resumo_abc = { A: 0, B: 0, C: 0 };
+    for (const p of produtos) resumo_abc[p.curva]++;
+
+    const data = { produtos, total_catalogo: catProdutos.length, dias_analisados: dias, pedidos_analisados: sample.length, total_pedidos: listaOrdens.length, resumo_abc };
+    cache.set(cacheKey, { ts: Date.now(), data });
+    res.json({ ok: true, ...data });
+  } catch (e) { res.status(500).json({ ok: false, msg: e.message }); }
+});
+
 // ── CLIENTES ─────────────────────────────────────────────────────────────────
 
 router.get('/clientes', authenticateToken, async (req, res) => {
@@ -312,6 +421,118 @@ router.get('/vendas', authenticateToken, authorize('admin', 'gerente'), async (r
     const total   = todos.reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
     res.json({ ok: true, total, qtd_pedidos: todos.length, pedidos_recentes: todos.slice(0,50).map(p=>({id:p.id,numero:p.numero,data:p.data_pedido,cliente:p.nome||'',vendedor:p.nome_vendedor||'',valor:parseFloat(p.valor)||0,situacao:p.situacao||''})) });
   } catch(e) { res.status(500).json({ ok: false, msg: e.message }); }
+});
+
+// ── CRM TEMPERATURA ──────────────────────────────────────────────────────────
+
+router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+  // periodo: 30 | 90 | 120 | 0 (geral = sem limite)
+  const periodo = Math.max(parseInt(req.query.periodo ?? '90'), 0);
+  const KEY = `crm_temp_${periodo}`;
+  try {
+    const cached = cache.get(KEY);
+    if (cached && Date.now() - cached.ts < CACHE_CRM) return res.json({ ok: true, ...cached.data });
+
+    // 1. Define data inicial e máximo de páginas conforme período
+    const maxPags = periodo === 0 ? 30 : periodo <= 30 ? 5 : periodo <= 90 ? 10 : 15;
+    const params  = periodo > 0
+      ? { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) }
+      : { dataInicial: '01/01/2020' }; // geral: desde o início
+
+    const orders = await fetchAllOrders(params, maxPags);
+
+    // 2. Agrupa por cliente: rastreia datas, valor e qtd de pedidos
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const clienteMap = {};
+    for (const p of orders) {
+      const nome = (p.nome || '').trim();
+      if (!nome || nome.toLowerCase() === 'consumidor final') continue;
+      const dt   = parseDateBR(p.data_pedido);
+      const val  = parseFloat(p.valor) || 0;
+      if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0 };
+      if (dt) {
+        if (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo) clienteMap[nome].ultimo = dt;
+        clienteMap[nome].datas.push(dt.getTime());
+      }
+      clienteMap[nome].totalValor += val;
+      clienteMap[nome].qtd++;
+    }
+
+    // 3. Carrega contatos para obter celular/telefone (até 8 páginas ~800 contatos)
+    const contatoMap = {};
+    for (let pag = 1; pag <= 8; pag++) {
+      const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
+      if (r?.retorno?.status !== 'OK') break;
+      for (const item of (r.retorno.contatos || [])) {
+        const c   = item.contato;
+        const key = (c.nome || '').trim().toLowerCase();
+        if (key) contatoMap[key] = { celular: c.celular || '', telefone: c.fone || c.telefone || '' };
+      }
+      if (pag >= (r.retorno.numero_paginas || 1)) break;
+      await sleep(280);
+    }
+
+    // 4. Classifica e monta lista final
+    const clientes = Object.values(clienteMap).map(c => {
+      const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
+      let temperatura;
+      if (diasSem === null || diasSem > 45) temperatura = 'congelado';
+      else if (diasSem <= 15)               temperatura = 'quente';
+      else if (diasSem <= 30)               temperatura = 'morno';
+      else                                  temperatura = 'frio';
+
+      // Frequência: intervalo médio entre compras
+      let freqDias = null;
+      if (c.datas.length >= 2) {
+        const sorted = [...c.datas].sort((a, b) => a - b);
+        let gap = 0;
+        for (let i = 1; i < sorted.length; i++) gap += (sorted[i] - sorted[i - 1]) / 86400000;
+        freqDias = Math.round(gap / (sorted.length - 1));
+      }
+
+      const ticketMedio = c.qtd > 0 ? c.totalValor / c.qtd : 0;
+      const contato     = contatoMap[c.nome.toLowerCase()] || { celular: '', telefone: '' };
+      return {
+        nome:          c.nome,
+        ultimo_pedido: c.ultimo ? formatDateBR(c.ultimo) : '—',
+        dias_sem:      diasSem,
+        temperatura,
+        qtd_pedidos:   c.qtd,
+        ticket_medio:  Math.round(ticketMedio * 100) / 100,
+        freq_dias:     freqDias,
+        total:         Math.round(c.totalValor * 100) / 100,
+        celular:       contato.celular,
+        telefone:      contato.telefone,
+      };
+    }).sort((a, b) => (a.dias_sem ?? 9999) - (b.dias_sem ?? 9999));
+
+    // 5. Resumo e perfil agregado
+    const resumo = { quente: 0, morno: 0, frio: 0, congelado: 0 };
+    clientes.forEach(c => resumo[c.temperatura]++);
+
+    const ativos      = clientes.filter(c => c.dias_sem !== null);
+    const comFreq     = ativos.filter(c => c.freq_dias !== null);
+    const ticketGeral = ativos.length ? ativos.reduce((s, c) => s + c.ticket_medio, 0) / ativos.length : 0;
+    const freqGeral   = comFreq.length ? Math.round(comFreq.reduce((s, c) => s + c.freq_dias, 0) / comFreq.length) : null;
+    const comWA       = clientes.filter(c => c.celular || c.telefone).length;
+    const topCliente  = [...ativos].sort((a, b) => b.total - a.total)[0] || null;
+
+    const perfil = {
+      total_clientes: clientes.length,
+      ativos:         ativos.length,
+      ticket_medio:   Math.round(ticketGeral * 100) / 100,
+      freq_media_dias: freqGeral,
+      com_whatsapp:   comWA,
+      top_cliente:    topCliente ? { nome: topCliente.nome, total: topCliente.total } : null,
+    };
+
+    const data = { clientes, resumo, perfil, total: clientes.length, periodo };
+    cache.set(KEY, { ts: Date.now(), data });
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    const status = /401|token|autoriza/i.test(e.message) ? 401 : 500;
+    res.status(status).json({ ok: false, msg: e.message });
+  }
 });
 
 module.exports = router;
