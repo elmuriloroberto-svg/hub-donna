@@ -7,27 +7,20 @@ const { randomUUID } = require('crypto');
 
 const { apiLimiter, authLimiter } = require('./middleware/security');
 
-const authRoutes = require('./routes/auth');
-const dbRoutes   = require('./routes/db');
-const tinyRoutes = require('./routes/tiny');
-
-// MySQL-dependent routes: only load when DB_HOST is configured (not available on Vercel)
-const isDbAvailable = !!process.env.DB_HOST;
-let usersRoutes, clientesRoutes, boletosRoutes, tasksRoutes, metasRoutes,
-    processosRoutes, entregasRoutes, folhaRoutes, configRoutes, dashboardRoutes, hubRoutes;
-if (isDbAvailable) {
-  usersRoutes     = require('./routes/users');
-  clientesRoutes  = require('./routes/clientes');
-  boletosRoutes   = require('./routes/boletos');
-  tasksRoutes     = require('./routes/tasks');
-  metasRoutes     = require('./routes/metas');
-  processosRoutes = require('./routes/processos');
-  entregasRoutes  = require('./routes/entregas');
-  folhaRoutes     = require('./routes/folha');
-  configRoutes    = require('./routes/config');
-  dashboardRoutes = require('./routes/dashboard');
-  hubRoutes       = require('./routes/hub');
-}
+const authRoutes      = require('./routes/auth');
+const dbRoutes        = require('./routes/db');
+const tinyRoutes      = require('./routes/tiny');
+const usersRoutes     = require('./routes/users');
+const clientesRoutes  = require('./routes/clientes');
+const boletosRoutes   = require('./routes/boletos');
+const tasksRoutes     = require('./routes/tasks');
+const metasRoutes     = require('./routes/metas');
+const processosRoutes = require('./routes/processos');
+const entregasRoutes  = require('./routes/entregas');
+const folhaRoutes     = require('./routes/folha');
+const configRoutes    = require('./routes/config');
+const dashboardRoutes = require('./routes/dashboard');
+const hubRoutes       = require('./routes/hub');
 
 const app    = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -147,24 +140,20 @@ app.get('/api/health', (req, res) => {
 });
 
 // ── Rotas ─────────────────────────────────────────────────────────────────────
-app.use('/api/auth', authLimiter, noCache, authRoutes);
-// Supabase-backed routes: always available (sem MySQL)
-app.use('/api/db',   apiLimiter,  noCache, dbRoutes);
-app.use('/api/tiny', apiLimiter,  tinyRoutes);
-// MySQL-backed routes: only mounted when DB_HOST is set
-if (isDbAvailable) {
-  app.use('/api/users',     apiLimiter, noCache, usersRoutes);
-  app.use('/api/clientes',  apiLimiter, clientesRoutes);
-  app.use('/api/boletos',   apiLimiter, boletosRoutes);
-  app.use('/api/tasks',     apiLimiter, tasksRoutes);
-  app.use('/api/metas',     apiLimiter, metasRoutes);
-  app.use('/api/processos', apiLimiter, processosRoutes);
-  app.use('/api/entregas',  apiLimiter, entregasRoutes);
-  app.use('/api/folha',     apiLimiter, folhaRoutes);
-  app.use('/api/config',    apiLimiter, configRoutes);
-  app.use('/api/dashboard', apiLimiter, dashboardRoutes);
-  app.use('/api/hub',       apiLimiter, hubRoutes);
-}
+app.use('/api/auth',      authLimiter, noCache, authRoutes);
+app.use('/api/db',        apiLimiter,  noCache, dbRoutes);
+app.use('/api/tiny',      apiLimiter,  tinyRoutes);
+app.use('/api/users',     apiLimiter,  noCache, usersRoutes);
+app.use('/api/clientes',  apiLimiter,  clientesRoutes);
+app.use('/api/boletos',   apiLimiter,  boletosRoutes);
+app.use('/api/tasks',     apiLimiter,  tasksRoutes);
+app.use('/api/metas',     apiLimiter,  metasRoutes);
+app.use('/api/processos', apiLimiter,  processosRoutes);
+app.use('/api/entregas',  apiLimiter,  entregasRoutes);
+app.use('/api/folha',     apiLimiter,  folhaRoutes);
+app.use('/api/config',    apiLimiter,  configRoutes);
+app.use('/api/dashboard', apiLimiter,  dashboardRoutes);
+app.use('/api/hub',       apiLimiter,  hubRoutes);
 
 // ── Frontend fallback ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

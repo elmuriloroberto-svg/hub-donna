@@ -1,20 +1,24 @@
-const express = require('express');
-const bcrypt  = require('bcryptjs');
-const db      = require('../config/database');
+const express  = require('express');
+const bcrypt   = require('bcryptjs');
+const { getSupabase }              = require('../lib/supabase');
 const { authenticateToken, authorize } = require('../middleware/auth');
-const { sanitizeStr, isPositiveInt }   = require('../middleware/security');
+const { sanitizeStr }              = require('../middleware/security');
 
 const router = express.Router();
 const VALID_ROLES = ['admin', 'gerente', 'colaborador'];
+const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // GET all users
 router.get('/', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
-    const connection = await db.getConnection();
-    const [users] = await connection.query(
-      'SELECT id, login, nome, role, ativo, created_at FROM users ORDER BY nome'
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('rubi_users')
+      .select('id, username, nome, role, ativo, created_at')
+      .order('nome');
+    if (error) throw new Error(error.message);
+    // expose as "login" para compatibilidade com o frontend
+    const users = (data || []).map((u) => ({ ...u, login: u.username }));
     res.json({ ok: true, data: users });
   } catch (err) {
     console.error(err);
@@ -22,7 +26,7 @@ router.get('/', authenticateToken, authorize('admin', 'gerente'), async (req, re
   }
 });
 
-// CREATE user — senha é hasheada com bcrypt antes de ir ao banco
+// CREATE user
 router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
   try {
     const login = sanitizeStr(req.body.login, 100);
@@ -30,33 +34,21 @@ router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
     const nome  = sanitizeStr(req.body.nome, 150);
     const role  = sanitizeStr(req.body.role, 50);
 
-    if (!login || !senha || !nome || !role) {
+    if (!login || !senha || !nome || !role)
       return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
-    }
-
-    if (!VALID_ROLES.includes(role)) {
+    if (!VALID_ROLES.includes(role))
       return res.status(400).json({ ok: false, msg: 'Role inválido' });
-    }
-
-    if (senha.length < 8) {
+    if (senha.length < 8)
       return res.status(400).json({ ok: false, msg: 'Senha deve ter no mínimo 8 caracteres' });
-    }
 
-    const connection = await db.getConnection();
-    const [existing] = await connection.query('SELECT id FROM users WHERE login = ?', [login]);
-
-    if (existing && existing.length > 0) {
-      connection.release();
+    const sb = getSupabase();
+    const { data: existing } = await sb.from('rubi_users').select('id').eq('username', login);
+    if (existing && existing.length > 0)
       return res.status(400).json({ ok: false, msg: 'Login já existe' });
-    }
 
-    const hashedSenha = await bcrypt.hash(senha, 12);
-
-    await connection.query(
-      'INSERT INTO users (login, senha, nome, role, ativo) VALUES (?, ?, ?, ?, 1)',
-      [login, hashedSenha, nome, role]
-    );
-    connection.release();
+    const password_hash = await bcrypt.hash(senha, 12);
+    const { error } = await sb.from('rubi_users').insert({ username: login, password_hash, nome, role });
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Usuário criado com sucesso' });
   } catch (err) {
@@ -69,29 +61,18 @@ router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
 router.put('/:id', authenticateToken, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (!isPositiveInt(id)) {
-      return res.status(400).json({ ok: false, msg: 'ID inválido' });
-    }
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
     const nome  = sanitizeStr(req.body.nome, 150);
     const role  = sanitizeStr(req.body.role, 50);
-    const ativo = req.body.ativo ? 1 : 0;
+    const ativo = !!req.body.ativo;
 
-    if (!nome || !role) {
-      return res.status(400).json({ ok: false, msg: 'Nome e role são obrigatórios' });
-    }
+    if (!nome || !role) return res.status(400).json({ ok: false, msg: 'Nome e role são obrigatórios' });
+    if (!VALID_ROLES.includes(role)) return res.status(400).json({ ok: false, msg: 'Role inválido' });
 
-    if (!VALID_ROLES.includes(role)) {
-      return res.status(400).json({ ok: false, msg: 'Role inválido' });
-    }
-
-    const connection = await db.getConnection();
-    await connection.query(
-      'UPDATE users SET nome = ?, role = ?, ativo = ? WHERE id = ?',
-      [nome, role, ativo, id]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('rubi_users').update({ nome, role, ativo }).eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Usuário atualizado' });
   } catch (err) {
@@ -104,14 +85,16 @@ router.put('/:id', authenticateToken, authorize('admin'), async (req, res) => {
 router.delete('/:id', authenticateToken, authorize('admin'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    if (!isPositiveInt(id)) {
-      return res.status(400).json({ ok: false, msg: 'ID inválido' });
-    }
+    const sb = getSupabase();
+    // impede deletar admins
+    const { data: user } = await sb.from('rubi_users').select('role').eq('id', id).single();
+    if (user?.role === 'admin')
+      return res.status(403).json({ ok: false, msg: 'Não é possível remover um admin' });
 
-    const connection = await db.getConnection();
-    await connection.query('DELETE FROM users WHERE id = ? AND role != "admin"', [id]);
-    connection.release();
+    const { error } = await sb.from('rubi_users').delete().eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Usuário removido' });
   } catch (err) {

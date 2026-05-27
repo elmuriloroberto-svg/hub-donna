@@ -1,19 +1,22 @@
 const express = require('express');
-const db      = require('../config/database');
-const { authenticateToken }          = require('../middleware/auth');
-const { sanitizeStr, isPositiveInt } = require('../middleware/security');
+const { getSupabase }              = require('../lib/supabase');
+const { authenticateToken }        = require('../middleware/auth');
+const { sanitizeStr }              = require('../middleware/security');
 
 const router = express.Router();
+const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
-// GET all clientes
+// GET all clientes ativos
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const connection = await db.getConnection();
-    const [clientes] = await connection.query(
-      'SELECT id, nome, tipo, telefone, email, endereco, cpf_cnpj, obs, ativo FROM clientes WHERE ativo = 1 ORDER BY nome'
-    );
-    connection.release();
-    res.json({ ok: true, data: clientes });
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('clientes')
+      .select('id, nome, tipo, telefone, email, endereco, cpf_cnpj, obs, ativo')
+      .eq('ativo', true)
+      .order('nome');
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, data: data || [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar clientes' });
@@ -23,24 +26,19 @@ router.get('/', authenticateToken, async (req, res) => {
 // CREATE cliente
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const nome      = sanitizeStr(req.body.nome, 150);
-    const tipo      = sanitizeStr(req.body.tipo, 50);
-    const telefone  = sanitizeStr(req.body.telefone, 20);
-    const email     = sanitizeStr(req.body.email, 150);
-    const endereco  = sanitizeStr(req.body.endereco, 255);
-    const cpf_cnpj  = sanitizeStr(req.body.cpf_cnpj, 20);
-    const obs       = sanitizeStr(req.body.obs, 500);
+    const nome     = sanitizeStr(req.body.nome, 150);
+    const tipo     = sanitizeStr(req.body.tipo, 50);
+    const telefone = sanitizeStr(req.body.telefone, 20);
+    const email    = sanitizeStr(req.body.email, 150);
+    const endereco = sanitizeStr(req.body.endereco, 255);
+    const cpf_cnpj = sanitizeStr(req.body.cpf_cnpj, 20);
+    const obs      = sanitizeStr(req.body.obs, 500);
 
-    if (!nome) {
-      return res.status(400).json({ ok: false, msg: 'Nome é obrigatório' });
-    }
+    if (!nome) return res.status(400).json({ ok: false, msg: 'Nome é obrigatório' });
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'INSERT INTO clientes (nome, tipo, telefone, email, endereco, cpf_cnpj, obs, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
-      [nome, tipo, telefone, email, endereco, cpf_cnpj, obs]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('clientes').insert({ nome, tipo, telefone, email, endereco, cpf_cnpj, obs });
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Cliente criado com sucesso' });
   } catch (err) {
@@ -53,26 +51,23 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    if (!isPositiveInt(id)) {
-      return res.status(400).json({ ok: false, msg: 'ID inválido' });
-    }
+    const nome     = sanitizeStr(req.body.nome, 150);
+    const tipo     = sanitizeStr(req.body.tipo, 50);
+    const telefone = sanitizeStr(req.body.telefone, 20);
+    const email    = sanitizeStr(req.body.email, 150);
+    const endereco = sanitizeStr(req.body.endereco, 255);
+    const cpf_cnpj = sanitizeStr(req.body.cpf_cnpj, 20);
+    const obs      = sanitizeStr(req.body.obs, 500);
+    const ativo    = !!req.body.ativo;
 
-    const nome      = sanitizeStr(req.body.nome, 150);
-    const tipo      = sanitizeStr(req.body.tipo, 50);
-    const telefone  = sanitizeStr(req.body.telefone, 20);
-    const email     = sanitizeStr(req.body.email, 150);
-    const endereco  = sanitizeStr(req.body.endereco, 255);
-    const cpf_cnpj  = sanitizeStr(req.body.cpf_cnpj, 20);
-    const obs       = sanitizeStr(req.body.obs, 500);
-    const ativo     = req.body.ativo ? 1 : 0;
-
-    const connection = await db.getConnection();
-    await connection.query(
-      'UPDATE clientes SET nome = ?, tipo = ?, telefone = ?, email = ?, endereco = ?, cpf_cnpj = ?, obs = ?, ativo = ? WHERE id = ?',
-      [nome, tipo, telefone, email, endereco, cpf_cnpj, obs, ativo, id]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('clientes')
+      .update({ nome, tipo, telefone, email, endereco, cpf_cnpj, obs, ativo })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Cliente atualizado' });
   } catch (err) {
@@ -85,14 +80,11 @@ router.put('/:id', authenticateToken, async (req, res) => {
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    if (!isPositiveInt(id)) {
-      return res.status(400).json({ ok: false, msg: 'ID inválido' });
-    }
-
-    const connection = await db.getConnection();
-    await connection.query('DELETE FROM clientes WHERE id = ?', [id]);
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('clientes').delete().eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Cliente removido' });
   } catch (err) {

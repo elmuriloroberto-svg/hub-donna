@@ -1,19 +1,26 @@
 const express = require('express');
-const db = require('../config/database');
+const { getSupabase }       = require('../lib/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
-// GET all metas
+// GET all metas (com nome do colaborador)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const connection = await db.getConnection();
-    const [metas] = await connection.query(
-      'SELECT m.*, u.nome as colaborador_nome FROM metas m JOIN users u ON m.colaborador_id = u.id ORDER BY m.mes DESC'
-    );
-    connection.release();
+    const sb = getSupabase();
+    const [metaRes, userRes] = await Promise.all([
+      sb.from('metas').select('*').order('mes', { ascending: false }),
+      sb.from('rubi_users').select('id, nome'),
+    ]);
+    if (metaRes.error) throw new Error(metaRes.error.message);
 
-    res.json({ ok: true, data: metas });
+    const userMap = Object.fromEntries((userRes.data || []).map((u) => [u.id, u.nome]));
+    const data = (metaRes.data || []).map((m) => ({
+      ...m,
+      colaborador_nome: userMap[m.colaborador_id] || '',
+    }));
+    res.json({ ok: true, data });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar metas' });
@@ -24,17 +31,15 @@ router.get('/', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { colaborador_id, mes, meta_valor, realizado } = req.body;
-
-    if (!colaborador_id || !mes || !meta_valor) {
+    if (!colaborador_id || !mes || !meta_valor)
       return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
-    }
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'INSERT INTO metas (colaborador_id, mes, meta_valor, realizado) VALUES (?, ?, ?, ?)',
-      [colaborador_id, mes, meta_valor, realizado || 0]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('metas').insert({
+      colaborador_id, mes,
+      meta_valor, realizado: realizado || 0,
+    });
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Meta criada' });
   } catch (err) {
@@ -47,14 +52,12 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { meta_valor, realizado } = req.body;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'UPDATE metas SET meta_valor = ?, realizado = ? WHERE id = ?',
-      [meta_valor, realizado, id]
-    );
-    connection.release();
+    const { meta_valor, realizado } = req.body;
+    const sb = getSupabase();
+    const { error } = await sb.from('metas').update({ meta_valor, realizado }).eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Meta atualizada' });
   } catch (err) {

@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../config/database');
+const { getSupabase }       = require('../lib/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -7,46 +7,25 @@ const router = express.Router();
 // GET dashboard data
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const connection = await db.getConnection();
-
+    const sb   = getSupabase();
     const hoje = new Date().toISOString().split('T')[0];
 
-    // Boletos vencidos
-    const [vencidos] = await connection.query(
-      'SELECT SUM(valor) as total FROM boletos_pagar WHERE status != "pago" AND vencimento <= ?',
-      [hoje]
-    );
+    const [bpRes, taskRes, uberRes] = await Promise.all([
+      sb.from('boletos_pagar').select('valor').neq('status', 'pago').lte('vencimento', hoje),
+      sb.from('tasks').select('id').eq('done', false),
+      sb.from('entregas').select('valor_cobrado, valor_uber'),
+    ]);
 
-    // Tarefas pendentes
-    const [tasks] = await connection.query('SELECT COUNT(*) as count FROM tasks WHERE done = 0');
-
-    // Boletos vencidos count
-    const [boletosCount] = await connection.query(
-      'SELECT COUNT(*) as count FROM boletos_pagar WHERE status != "pago" AND vencimento <= ?',
-      [hoje]
-    );
-
-    // Lucro Uber
-    const [uber] = await connection.query(
-      'SELECT SUM(valor_cobrado) as cobrado, SUM(valor_uber) as uber FROM entregas'
-    );
-
-    connection.release();
-
-    const valor_vencidos = vencidos[0]?.total || 0;
-    const tarefas_pendentes = tasks[0]?.count || 0;
-    const boletos_vencidos = boletosCount[0]?.count || 0;
-    const lucro_uber_mes = (parseFloat(uber[0]?.cobrado) || 0) - (parseFloat(uber[0]?.uber) || 0);
+    const valor_vencidos    = (bpRes.data || []).reduce((s, r) => s + parseFloat(r.valor || 0), 0);
+    const boletos_vencidos  = (bpRes.data || []).length;
+    const tarefas_pendentes = (taskRes.data || []).length;
+    const cobrado           = (uberRes.data || []).reduce((s, r) => s + parseFloat(r.valor_cobrado || 0), 0);
+    const uber              = (uberRes.data || []).reduce((s, r) => s + parseFloat(r.valor_uber || 0), 0);
+    const lucro_uber_mes    = cobrado - uber;
 
     res.json({
       ok: true,
-      data: {
-        valor_vencidos,
-        tarefas_pendentes,
-        boletos_vencidos,
-        lucro_uber_mes,
-        alertas: []
-      }
+      data: { valor_vencidos, tarefas_pendentes, boletos_vencidos, lucro_uber_mes, alertas: [] },
     });
   } catch (err) {
     console.error(err);

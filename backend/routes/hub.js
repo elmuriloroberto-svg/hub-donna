@@ -1,41 +1,37 @@
 const express = require('express');
-const db = require('../config/database');
+const { getSupabase }                  = require('../lib/supabase');
 const { authenticateToken, authorize } = require('../middleware/auth');
 
 const router = express.Router();
+const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // GET all hub entries
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const connection = await db.getConnection();
-    const [rows] = await connection.query(
-      'SELECT id, categoria, titulo, conteudo, meta, ativo, created_by, created_at, updated_at FROM hub_data WHERE ativo = 1 ORDER BY updated_at DESC'
-    );
-    connection.release();
-
-    res.json({ ok: true, data: rows });
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('hub_data')
+      .select('id, categoria, titulo, conteudo, meta, ativo, created_by, created_at, updated_at')
+      .eq('ativo', true)
+      .order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, data: data || [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar dados do Hub' });
   }
 });
 
-// GET single hub entry by id
+// GET single hub entry
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const connection = await db.getConnection();
-    const [rows] = await connection.query(
-      'SELECT id, categoria, titulo, conteudo, meta, ativo, created_by, created_at, updated_at FROM hub_data WHERE id = ?',
-      [id]
-    );
-    connection.release();
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    if (!rows.length) {
-      return res.status(404).json({ ok: false, msg: 'Registro do Hub não encontrado' });
-    }
-
-    res.json({ ok: true, data: rows[0] });
+    const sb = getSupabase();
+    const { data, error } = await sb.from('hub_data').select('*').eq('id', id).single();
+    if (error) return res.status(404).json({ ok: false, msg: 'Registro do Hub não encontrado' });
+    res.json({ ok: true, data });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar registro do Hub' });
@@ -46,18 +42,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { categoria, titulo, conteudo, meta } = req.body;
-    const created_by = req.user?.id || null;
-
-    if (!titulo || !conteudo) {
+    if (!titulo || !conteudo)
       return res.status(400).json({ ok: false, msg: 'Título e conteúdo são obrigatórios' });
-    }
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'INSERT INTO hub_data (categoria, titulo, conteudo, meta, ativo, created_by) VALUES (?, ?, ?, ?, 1, ?)',
-      [categoria || 'geral', titulo, conteudo, meta || '', created_by]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('hub_data').insert({
+      categoria: categoria || 'geral', titulo, conteudo,
+      meta: meta || '', created_by: req.user?.id || null,
+    });
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Informação do Hub salva com sucesso' });
   } catch (err) {
@@ -66,22 +59,22 @@ router.post('/', authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE hub entry — apenas admin/gerente
+// UPDATE hub entry
 router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+
     const { categoria, titulo, conteudo, meta, ativo } = req.body;
-
-    if (!titulo || !conteudo) {
+    if (!titulo || !conteudo)
       return res.status(400).json({ ok: false, msg: 'Título e conteúdo são obrigatórios' });
-    }
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'UPDATE hub_data SET categoria = ?, titulo = ?, conteudo = ?, meta = ?, ativo = ? WHERE id = ?',
-      [categoria || 'geral', titulo, conteudo, meta || '', ativo ? 1 : 0, id]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('hub_data')
+      .update({ categoria: categoria || 'geral', titulo, conteudo, meta: meta || '', ativo: !!ativo })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Informação do Hub atualizada com sucesso' });
   } catch (err) {
@@ -90,13 +83,15 @@ router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req,
   }
 });
 
-// DELETE hub entry — apenas admin/gerente
+// DELETE hub entry
 router.delete('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
-    const connection = await db.getConnection();
-    await connection.query('DELETE FROM hub_data WHERE id = ?', [id]);
-    connection.release();
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+
+    const sb = getSupabase();
+    const { error } = await sb.from('hub_data').delete().eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Informação do Hub removida' });
   } catch (err) {

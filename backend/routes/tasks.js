@@ -1,19 +1,23 @@
 const express = require('express');
-const db = require('../config/database');
+const { getSupabase }       = require('../lib/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
+const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
-// GET all tasks
+// GET all tasks (com nome do colaborador)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const connection = await db.getConnection();
-    const [tasks] = await connection.query(
-      'SELECT t.*, u.nome as collab_nome FROM tasks t JOIN users u ON t.collab_id = u.id ORDER BY t.prazo DESC'
-    );
-    connection.release();
+    const sb = getSupabase();
+    const [taskRes, userRes] = await Promise.all([
+      sb.from('tasks').select('*').order('prazo', { ascending: false }),
+      sb.from('rubi_users').select('id, nome'),
+    ]);
+    if (taskRes.error) throw new Error(taskRes.error.message);
 
-    res.json({ ok: true, data: tasks });
+    const userMap = Object.fromEntries((userRes.data || []).map((u) => [u.id, u.nome]));
+    const data = (taskRes.data || []).map((t) => ({ ...t, collab_nome: userMap[t.collab_id] || '' }));
+    res.json({ ok: true, data });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar tarefas' });
@@ -24,17 +28,21 @@ router.get('/', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { titulo, descricao, collab_id, prazo, prio, recorrente, intervalo_dias } = req.body;
-
-    if (!titulo || !collab_id) {
+    if (!titulo || !collab_id)
       return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
-    }
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'INSERT INTO tasks (titulo, descricao, collab_id, prazo, prio, delegado_por_id, recorrente, intervalo_dias, done) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
-      [titulo, descricao || '', collab_id, prazo || null, prio || 'media', req.user.id, recorrente ? 1 : 0, intervalo_dias || null]
-    );
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('tasks').insert({
+      titulo,
+      descricao: descricao || '',
+      collab_id,
+      prazo: prazo || null,
+      prio: prio || 'media',
+      delegado_por_id: req.user.id,
+      recorrente: !!recorrente,
+      intervalo_dias: intervalo_dias || null,
+    });
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Tarefa criada' });
   } catch (err) {
@@ -47,14 +55,15 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { titulo, descricao, prazo, prio, done } = req.body;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    const connection = await db.getConnection();
-    await connection.query(
-      'UPDATE tasks SET titulo = ?, descricao = ?, prazo = ?, prio = ?, done = ? WHERE id = ?',
-      [titulo, descricao, prazo, prio, done ? 1 : 0, id]
-    );
-    connection.release();
+    const { titulo, descricao, prazo, prio, done } = req.body;
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('tasks')
+      .update({ titulo, descricao, prazo, prio, done: !!done })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Tarefa atualizada' });
   } catch (err) {
@@ -67,10 +76,11 @@ router.put('/:id', authenticateToken, async (req, res) => {
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    const connection = await db.getConnection();
-    await connection.query('DELETE FROM tasks WHERE id = ?', [id]);
-    connection.release();
+    const sb = getSupabase();
+    const { error } = await sb.from('tasks').delete().eq('id', id);
+    if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Tarefa removida' });
   } catch (err) {
