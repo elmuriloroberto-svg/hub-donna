@@ -63,7 +63,7 @@ async function loadContatos() {
     return _contatosCache.data;
   }
   const map = {};
-  for (let pag = 1; pag <= 100; pag++) {
+  for (let pag = 1; pag <= 200; pag++) {
     const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
     if (r?.retorno?.status !== 'OK') break;
     for (const item of (r.retorno.contatos || [])) {
@@ -454,6 +454,35 @@ router.get('/vendas', authenticateToken, authorize('admin', 'gerente'), async (r
 
 // ── CRM TEMPERATURA ──────────────────────────────────────────────────────────
 
+// Converte "YYYY-MM-DD" → "DD/MM/YYYY" (usado para reutilizar cache do hist)
+function isoToBR(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function buildCrmResumoEPerfil(clientes) {
+  const resumo = { quente: 0, morno: 0, frio: 0, congelado: 0 };
+  clientes.forEach(c => resumo[c.temperatura]++);
+  const ativos     = clientes.filter(c => c.dias_sem !== null);
+  const comFreq    = ativos.filter(c => c.freq_dias !== null);
+  const tkGeral    = ativos.length ? ativos.reduce((s, c) => s + c.ticket_medio, 0) / ativos.length : 0;
+  const freqGeral  = comFreq.length ? Math.round(comFreq.reduce((s, c) => s + c.freq_dias, 0) / comFreq.length) : null;
+  const comWA      = clientes.filter(c => c.celular || c.telefone).length;
+  const top        = [...ativos].sort((a, b) => b.total - a.total)[0] || null;
+  return {
+    resumo,
+    perfil: {
+      total_clientes:  clientes.length,
+      ativos:          ativos.length,
+      ticket_medio:    Math.round(tkGeral * 100) / 100,
+      freq_media_dias: freqGeral,
+      com_whatsapp:    comWA,
+      top_cliente:     top ? { nome: top.nome, total: top.total } : null,
+    },
+  };
+}
+
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   // periodo: 30 | 90 | 120 | 0 (geral = sem limite)
   const periodo = Math.max(parseInt(req.query.periodo ?? '90'), 0);
@@ -462,8 +491,46 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
     const cached = cache.get(KEY);
     if (cached && Date.now() - cached.ts < CACHE_CRM) return res.json({ ok: true, ...cached.data });
 
-    // 1. Busca orders E contatos em paralelo para reduzir tempo total
-    const maxPags = periodo === 0 ? 20 : periodo <= 30 ? 5 : periodo <= 90 ? 10 : 15;
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+
+    // ── Caminho rápido para Geral: reutiliza cache do historico-clientes ──────
+    if (periodo === 0) {
+      const histCached = cache.get('hist_5');
+      if (histCached && Date.now() - histCached.ts < CACHE_HIST) {
+        const contatoMap = await loadContatos();
+        const clientes = histCached.data.map(h => {
+          const diasSem = h.dias_sem;
+          let temperatura;
+          if (diasSem === null || diasSem > 45) temperatura = 'congelado';
+          else if (diasSem <= 15)              temperatura = 'quente';
+          else if (diasSem <= 30)              temperatura = 'morno';
+          else                                 temperatura = 'frio';
+          const nk = normName(h.nome);
+          const ct = contatoMap[nk] || { celular: '', telefone: '' };
+          return {
+            nome:          h.nome,
+            ultimo_pedido: isoToBR(h.ultimo_pedido),
+            dias_sem:      diasSem,
+            temperatura,
+            qtd_pedidos:   h.qtd_pedidos,
+            ticket_medio:  h.qtd_pedidos > 0 ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
+            freq_dias:     null,
+            total:         h.valor_total,
+            celular:       ct.celular,
+            telefone:      ct.telefone,
+          };
+        }).sort((a, b) => (a.dias_sem ?? 9999) - (b.dias_sem ?? 9999));
+
+        const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
+        const data = { clientes, resumo, perfil, total: clientes.length, periodo };
+        cache.set(KEY, { ts: Date.now(), data });
+        return res.json({ ok: true, ...data });
+      }
+    }
+
+    // ── Caminho padrão: busca pedidos + contatos em paralelo ─────────────────
+    // Limite de páginas proporcional ao período (20 pedidos/página × N páginas)
+    const maxPags = periodo === 0 ? 100 : periodo <= 30 ? 20 : periodo <= 90 ? 40 : 50;
     const params  = periodo > 0
       ? { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) }
       : { dataInicial: '01/01/2020' };
@@ -473,8 +540,7 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       loadContatos(),
     ]);
 
-    // 2. Agrupa por cliente
-    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    // Agrupa por cliente
     const clienteMap = {};
     for (const p of orders) {
       const nome = (p.nome || '').trim();
@@ -490,16 +556,14 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       clienteMap[nome].qtd++;
     }
 
-    // 3. Classifica e monta lista final
     const clientes = Object.values(clienteMap).map(c => {
       const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
       let temperatura;
       if (diasSem === null || diasSem > 45) temperatura = 'congelado';
-      else if (diasSem <= 15)               temperatura = 'quente';
-      else if (diasSem <= 30)               temperatura = 'morno';
-      else                                  temperatura = 'frio';
+      else if (diasSem <= 15)              temperatura = 'quente';
+      else if (diasSem <= 30)              temperatura = 'morno';
+      else                                 temperatura = 'frio';
 
-      // Frequência: intervalo médio entre compras
       let freqDias = null;
       if (c.datas.length >= 2) {
         const sorted = [...c.datas].sort((a, b) => a - b);
@@ -508,44 +572,23 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
         freqDias = Math.round(gap / (sorted.length - 1));
       }
 
-      const ticketMedio = c.qtd > 0 ? c.totalValor / c.qtd : 0;
-      // Lookup por nome normalizado (sem acento, lowercase)
-      const nk      = normName(c.nome);
-      const contato = contatoMap[nk] || { celular: '', telefone: '' };
+      const nk = normName(c.nome);
+      const ct = contatoMap[nk] || { celular: '', telefone: '' };
       return {
         nome:          c.nome,
         ultimo_pedido: c.ultimo ? formatDateBR(c.ultimo) : '—',
         dias_sem:      diasSem,
         temperatura,
         qtd_pedidos:   c.qtd,
-        ticket_medio:  Math.round(ticketMedio * 100) / 100,
+        ticket_medio:  Math.round((c.qtd > 0 ? c.totalValor / c.qtd : 0) * 100) / 100,
         freq_dias:     freqDias,
         total:         Math.round(c.totalValor * 100) / 100,
-        celular:       contato.celular,
-        telefone:      contato.telefone,
+        celular:       ct.celular,
+        telefone:      ct.telefone,
       };
     }).sort((a, b) => (a.dias_sem ?? 9999) - (b.dias_sem ?? 9999));
 
-    // 5. Resumo e perfil agregado
-    const resumo = { quente: 0, morno: 0, frio: 0, congelado: 0 };
-    clientes.forEach(c => resumo[c.temperatura]++);
-
-    const ativos      = clientes.filter(c => c.dias_sem !== null);
-    const comFreq     = ativos.filter(c => c.freq_dias !== null);
-    const ticketGeral = ativos.length ? ativos.reduce((s, c) => s + c.ticket_medio, 0) / ativos.length : 0;
-    const freqGeral   = comFreq.length ? Math.round(comFreq.reduce((s, c) => s + c.freq_dias, 0) / comFreq.length) : null;
-    const comWA       = clientes.filter(c => c.celular || c.telefone).length;
-    const topCliente  = [...ativos].sort((a, b) => b.total - a.total)[0] || null;
-
-    const perfil = {
-      total_clientes: clientes.length,
-      ativos:         ativos.length,
-      ticket_medio:   Math.round(ticketGeral * 100) / 100,
-      freq_media_dias: freqGeral,
-      com_whatsapp:   comWA,
-      top_cliente:    topCliente ? { nome: topCliente.nome, total: topCliente.total } : null,
-    };
-
+    const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
     const data = { clientes, resumo, perfil, total: clientes.length, periodo };
     cache.set(KEY, { ts: Date.now(), data });
     res.json({ ok: true, ...data });
