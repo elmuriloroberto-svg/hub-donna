@@ -533,7 +533,7 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
     const maxPags = periodo === 0 ? 100 : periodo <= 30 ? 20 : periodo <= 90 ? 40 : 50;
     const params  = periodo > 0
       ? { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) }
-      : { dataInicial: '01/01/2020' };
+      : { dataInicial: '02/09/2023' };   // primeira venda registrada na loja
 
     const [orders, contatoMap] = await Promise.all([
       fetchAllOrders(params, maxPags),
