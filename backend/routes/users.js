@@ -5,7 +5,7 @@ const { authenticateToken, authorize } = require('../middleware/auth');
 const { sanitizeStr }              = require('../middleware/security');
 
 const router = express.Router();
-const VALID_ROLES = ['admin', 'gerente', 'colaborador'];
+const VALID_ROLES = ['admin', 'gerente', 'vendedor', 'colaborador'];
 const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // GET all users
