@@ -686,10 +686,14 @@ function sortByTemp(arr) {
   );
 }
 
-// SWR puro — nunca bloqueia o request. Build pesado (Geral = anos de dados) roda
-// em background; Vercel não cancela porque res.end() já foi chamado antes.
+// Vercel Lambda suspende o processo após res.json() — builds em background (SWR) ficam
+// orphan e nunca gravam no cache. Estratégia híbrida:
+//   • periodo > 0  (30/90/120d): build síncrono — cabe nos 60s do maxDuration
+//   • periodo = 0  (Geral)     : SWR puro — hist_5 leva 60s+ numa Lambda fria,
+//                                 então retorna loading imediatamente; numa Lambda
+//                                 quente que já tem hist_5 retorna dados no próximo hit.
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
-  const periodo = Math.max(parseInt(req.query.periodo ?? '90'), 0);
+  const periodo = Math.max(parseInt(req.query.periodo ?? '30'), 0);
   const KEY = `crm_temp_${periodo}`;
 
   try {
@@ -698,11 +702,18 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       if (hit.stale) swrBuild(KEY, () => _buildCrmTemp(periodo));
       return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
     }
-    // Sem cache: dispara build em background e retorna loading imediatamente.
-    // Evita HTTP 500/timeout para Geral (anos de dados) e períodos longos.
-    swrBuild(KEY, () => _buildCrmTemp(periodo));
-    const label = periodo === 0 ? 'histórico completo' : `últimos ${periodo} dias`;
-    return loadingResponse(res, `Construindo CRM (${label})… Aguarde ~30s e atualize.`);
+
+    if (periodo === 0) {
+      // Geral: muito pesado para build síncrono (hist_5 = 5 anos, 60s+).
+      // SWR — numa Lambda quente o hit acima já teria respondido.
+      swrBuild(KEY, () => _buildCrmTemp(0));
+      return loadingResponse(res, 'Histórico completo ainda não gerado. Aguarde e atualize a página.');
+    }
+
+    // 30 / 90 / 120 dias: build síncrono — cabível em ~15-45s dentro do maxDuration.
+    const data = await _buildCrmTemp(periodo);
+    cache.set(KEY, { ts: Date.now(), data });
+    return res.json({ ok: true, stale: false, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
   }
