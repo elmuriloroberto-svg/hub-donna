@@ -50,23 +50,35 @@ function formatDateBR(d) {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 }
 
-const normName = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const normName = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 // ── Paginação ─────────────────────────────────────────────────────────────────
+// Cada página tem até 3 tentativas com backoff exponencial antes de desistir.
+async function _fetchOrdersPage(params, pag) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await tinyGet('pedidos.pesquisa.php', { ...params, pagina: pag });
+      if (r?.retorno?.status === 'OK') return r;
+    } catch (_) {}
+    if (attempt < 3) await sleep(500 * attempt); // 500ms, 1000ms
+  }
+  return null;
+}
+
 // maxPags limita o scan (útil para rotas de amostragem).
 // Padrão: 9999 = sem limite artificial — para quando numero_paginas da API.
 async function fetchAllOrders(params, maxPags = 9999) {
   const todos = [];
   let pag = 1;
   while (pag <= maxPags) {
-    const r = await tinyGet('pedidos.pesquisa.php', { ...params, pagina: pag });
-    if (r?.retorno?.status !== 'OK') break;
+    const r = await _fetchOrdersPage(params, pag);
+    if (!r) break; // desistiu após 3 tentativas — para sem estourar
     const pedidos = (r.retorno.pedidos || []).map(p => p.pedido);
     todos.push(...pedidos);
     const totalPags = parseInt(r.retorno.numero_paginas) || 1;
     if (pag >= totalPags) break;
     pag++;
-    await sleep(320); // 320ms → ~3 req/s, dentro do rate limit do Tiny
+    await sleep(300);
   }
   return todos;
 }
@@ -88,26 +100,52 @@ function bestPhone(c) {
 // Cache de contatos (módulo-level — persiste entre requests)
 let _contatosCache = null;
 
-async function _fetchContatos() {
-  const map = {};
-  let pag = 1;
-  while (true) {
+async function _fetchContatosPage(pag) {
+  for (let tentativa = 1; tentativa <= 4; tentativa++) {
     const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
-    if (r?.retorno?.status !== 'OK') break;
-    for (const item of (r.retorno.contatos || [])) {
-      const c = item.contato;
+    if (r?.retorno?.status === 'OK') return r;
+    // Rate limit ou erro transitório: backoff antes de tentar de novo
+    if (tentativa < 4) await sleep(600 * tentativa); // 600ms, 1200ms, 1800ms
+  }
+  return null; // desiste após 4 tentativas — não quebra o loop, só pula a página
+}
+
+async function _fetchContatos() {
+  const byId   = {};
+  const byCpf  = {};
+  const byName = {};
+  let pag = 1;
+  const MAX_PAGS = 500;
+  while (pag <= MAX_PAGS) {
+    const r = await _fetchContatosPage(pag);
+    if (!r) {
+      console.warn(`[contatos] página ${pag} falhou após retentativas — parando.`);
+      break;
+    }
+    const items = (r.retorno.contatos || []).map(i => i.contato);
+    if (items.length === 0) break; // fim da paginação
+    for (const c of items) {
       const phones = bestPhone(c);
       const raw = phones.celular.replace(/\D/g, '');
-      if (raw.length < 8) continue; // ignora sem número válido
+      if (raw.length < 8) continue;
+      const phoneData = { celular: phones.celular, telefone: phones.telefone };
+      if (c.id) byId[String(c.id)] = phoneData;
+      const cpf = (c.cpf_cnpj || '').replace(/\D/g, '');
+      if (cpf.length >= 11) byCpf[cpf] = phoneData;
+      // índice por nome completo normalizado
       const key = normName(c.nome);
-      if (key) map[key] = phones;
+      if (key) byName[key] = phoneData;
+      // índice por nome fantasia (trade name), se existir
+      const fan = normName(c.fantasia);
+      if (fan && !byName[fan]) byName[fan] = phoneData;
     }
-    const totalPags = parseInt(r.retorno.numero_paginas) || 1;
+    const totalPags = parseInt(r.retorno.numero_paginas) || 999;
     if (pag >= totalPags) break;
     pag++;
-    await sleep(100);
+    await sleep(300);
   }
-  return map;
+  console.log(`[contatos] carregados: ${Object.keys(byName).length} nomes / ${Object.keys(byId).length} IDs`);
+  return { byId, byCpf, byName };
 }
 
 // Retorna contatos do cache imediatamente (mesmo stale).
@@ -132,6 +170,22 @@ function loadContatos() {
       .finally(() => _building.delete('_contatos'));
   }
   return Promise.resolve({});
+}
+
+const EMPTY_PHONE = { celular: '', telefone: '' };
+
+function lookupContato(contatoMap, idContato, cpfCnpj, nome) {
+  if (idContato) {
+    const hit = contatoMap.byId?.[String(idContato)];
+    if (hit) return hit;
+  }
+  const cpf = (cpfCnpj || '').replace(/\D/g, '');
+  if (cpf.length >= 11) {
+    const hit = contatoMap.byCpf?.[cpf];
+    if (hit) return hit;
+  }
+  const nk = normName(nome);
+  return (nk && contatoMap.byName?.[nk]) || EMPTY_PHONE;
 }
 
 // ── Stale-while-revalidate ────────────────────────────────────────────────────
@@ -546,10 +600,15 @@ async function _buildHistoricoClientes(anos) {
     const nome = (p.nome||'').trim();
     if (!nome || nome.toLowerCase()==='consumidor final') continue;
     const dt = parseDateBR(p.data_pedido);
-    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, qtd: 0, total: 0 };
+    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, qtd: 0, total: 0, id_contato: null, cpf_cnpj: null };
     if (dt && (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo)) clienteMap[nome].ultimo = dt;
     clienteMap[nome].qtd++;
     clienteMap[nome].total += parseFloat(p.valor) || 0;
+    if (!clienteMap[nome].id_contato) {
+      const pid = p.id_contato || p.cliente?.id;
+      if (pid) clienteMap[nome].id_contato = String(pid);
+    }
+    if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
   }
   return Object.values(clienteMap).map(c => ({
     nome:          c.nome,
@@ -557,6 +616,8 @@ async function _buildHistoricoClientes(anos) {
     dias_sem:      c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null,
     qtd_pedidos:   c.qtd,
     valor_total:   Math.round(c.total * 100) / 100,
+    id_contato:    c.id_contato,
+    cpf_cnpj:      c.cpf_cnpj,
   })).sort((a,b) => (a.dias_sem??99999) - (b.dias_sem??99999));
 }
 
@@ -625,7 +686,8 @@ function sortByTemp(arr) {
   );
 }
 
-// Blocking build — Vercel serverless cancela background tasks após res.end().
+// SWR puro — nunca bloqueia o request. Build pesado (Geral = anos de dados) roda
+// em background; Vercel não cancela porque res.end() já foi chamado antes.
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   const periodo = Math.max(parseInt(req.query.periodo ?? '90'), 0);
   const KEY = `crm_temp_${periodo}`;
@@ -636,10 +698,11 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       if (hit.stale) swrBuild(KEY, () => _buildCrmTemp(periodo));
       return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
     }
-    // Sem cache: aguarda build completo antes de responder
-    const data = await _buildCrmTemp(periodo);
-    cache.set(KEY, { ts: Date.now(), data });
-    return res.json({ ok: true, stale: false, ...data });
+    // Sem cache: dispara build em background e retorna loading imediatamente.
+    // Evita HTTP 500/timeout para Geral (anos de dados) e períodos longos.
+    swrBuild(KEY, () => _buildCrmTemp(periodo));
+    const label = periodo === 0 ? 'histórico completo' : `últimos ${periodo} dias`;
+    return loadingResponse(res, `Construindo CRM (${label})… Aguarde ~30s e atualize.`);
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
   }
@@ -669,8 +732,7 @@ async function _buildCrmTemp(periodo) {
       return d;
     });
     const clientes = sortByTemp(histData.map(h => {
-      const nk = normName(h.nome);
-      const ct = contatoMap[nk] || { celular: '', telefone: '' };
+      const ct = lookupContato(contatoMap, h.id_contato, h.cpf_cnpj, h.nome);
       return {
         nome:          h.nome,
         ultimo_pedido: isoToBR(h.ultimo_pedido),
@@ -704,13 +766,18 @@ async function _buildCrmTemp(periodo) {
     if (!nome || nome.toLowerCase() === 'consumidor final') continue;
     const dt  = parseDateBR(p.data_pedido);
     const val = parseFloat(p.valor) || 0;
-    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0 };
+    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0, id_contato: null, cpf_cnpj: null };
     if (dt) {
       if (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo) clienteMap[nome].ultimo = dt;
       clienteMap[nome].datas.push(dt.getTime());
     }
     clienteMap[nome].totalValor += val;
     clienteMap[nome].qtd++;
+    if (!clienteMap[nome].id_contato) {
+      const pid = p.id_contato || p.cliente?.id;
+      if (pid) clienteMap[nome].id_contato = String(pid);
+    }
+    if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
   }
 
   const clientes = sortByTemp(Object.values(clienteMap).map(c => {
@@ -722,8 +789,7 @@ async function _buildCrmTemp(periodo) {
       for (let i = 1; i < s.length; i++) g += (s[i]-s[i-1]) / 86400000;
       freqDias = Math.round(g / (s.length - 1));
     }
-    const nk = normName(c.nome);
-    const ct = contatoMap[nk] || { celular: '', telefone: '' };
+    const ct = lookupContato(contatoMap, c.id_contato, c.cpf_cnpj, c.nome);
     return {
       nome:          c.nome,
       ultimo_pedido: c.ultimo ? formatDateBR(c.ultimo) : '—',
@@ -756,7 +822,7 @@ router.get('/cache-status', authenticateToken, authorize('admin'), (req, res) =>
     cached: !!_contatosCache,
     age_min: _contatosCache ? Math.round((Date.now() - _contatosCache.ts) / 60000) : null,
     building: _building.has('_contatos'),
-    entries: _contatosCache ? Object.keys(_contatosCache.data).length : 0,
+    entries: _contatosCache ? Object.keys(_contatosCache.data.byId || {}).length : 0,
   };
   res.json({ ok: true, building: [..._building], cache: status });
 });
@@ -771,7 +837,7 @@ setTimeout(() => {
     _fetchContatos()
       .then(data => {
         _contatosCache = { ts: Date.now(), data };
-        console.log(`[tiny] warm-up: ${Object.keys(data).length} contatos carregados.`);
+        console.log(`[tiny] warm-up: ${Object.keys(data.byId).length} contatos carregados.`);
       })
       .catch(e => console.error('[tiny] warm-up contatos falhou:', e.message))
       .finally(() => _building.delete('_contatos'));
