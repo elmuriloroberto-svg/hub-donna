@@ -1,4 +1,4 @@
--- ============================================================
+11-- ============================================================
 -- Donna Hub v4 — Migração completa para Supabase (PostgreSQL)
 -- Rodar no SQL Editor do Supabase (projeto Hub: suvzmcwsiqoglbnidvzo)
 -- IMPORTANTE: rode supabase_security_migrate.sql ANTES deste
@@ -168,3 +168,29 @@ CREATE POLICY "service_only_entregas"        ON entregas        FOR ALL TO servi
 CREATE POLICY "service_only_folha"           ON folha           FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "service_only_hub_data"        ON hub_data        FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY "service_only_hub_config"      ON hub_config      FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- ── CRM Clientes — dados cruzados Tiny (contatos + pedidos) ─────────────────
+-- Alimentada diariamente pelo cron do backend (syncCrm.js)
+CREATE TABLE IF NOT EXISTS crm_clientes (
+  id              BIGSERIAL PRIMARY KEY,
+  nome            TEXT NOT NULL,
+  celular         TEXT NOT NULL DEFAULT '',
+  telefone        TEXT NOT NULL DEFAULT '',
+  telefones       JSONB NOT NULL DEFAULT '[]',
+  ultimo_pedido   TEXT,
+  dias_sem        INTEGER,
+  temperatura     TEXT NOT NULL DEFAULT 'congelado',
+  qtd_pedidos     INTEGER NOT NULL DEFAULT 0,
+  ticket_medio    NUMERIC(10,2) NOT NULL DEFAULT 0,
+  frequencia_dias INTEGER,
+  total           NUMERIC(12,2) NOT NULL DEFAULT 0,
+  atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(nome)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_temperatura   ON crm_clientes(temperatura);
+CREATE INDEX IF NOT EXISTS idx_crm_atualizado_em ON crm_clientes(atualizado_em DESC);
+
+ALTER TABLE crm_clientes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_only_crm_clientes" ON crm_clientes;
+CREATE POLICY "service_only_crm_clientes" ON crm_clientes FOR ALL TO service_role USING (true) WITH CHECK (true);

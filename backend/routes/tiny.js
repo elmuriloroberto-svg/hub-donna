@@ -2,6 +2,7 @@ const express  = require('express');
 const https    = require('https');
 const { authenticateToken, authorize } = require('../middleware/auth');
 const { sanitizeStr } = require('../middleware/security');
+const { getSupabase } = require('../lib/supabase');
 
 const router = express.Router();
 
@@ -84,17 +85,34 @@ async function fetchAllOrders(params, maxPags = 9999) {
 }
 
 // ── Contatos ─────────────────────────────────────────────────────────────────
-// Seleciona o melhor número disponível nos campos celular/fone/telefone
+// Varredura agressiva: coleta todos os valores de telefone possíveis e ordena
+// por número de dígitos (mais dígitos = mais completo = provável celular).
 function bestPhone(c) {
-  const cel = (c.celular || '').trim();
-  const tel = (c.fone || c.telefone || '').trim();
-  const digCel = cel.replace(/\D/g, '').length;
-  const digTel = tel.replace(/\D/g, '').length;
-  // Prefere o campo com mais dígitos (celular tem 9, fixo tem 8)
-  if (digCel >= digTel) {
-    return { celular: cel || tel, telefone: tel || cel };
+  const candidates = [c.celular, c.fone, c.telefone, c.tel, c.mobile]
+    .filter(Boolean)
+    .map(v => String(v).trim());
+
+  // fones pode ser array de strings, objetos { numero } ou { fone: { numero } }
+  const fones = c.fones || c.Fones;
+  if (Array.isArray(fones)) {
+    for (const f of fones) {
+      if (typeof f === 'string') candidates.push(f.trim());
+      else if (f?.fone?.numero) candidates.push(String(f.fone.numero).trim());
+      else if (f?.numero)       candidates.push(String(f.numero).trim());
+      else if (f?.fone)         candidates.push(String(f.fone).trim());
+    }
   }
-  return { celular: tel || cel, telefone: cel || tel };
+
+  // Dedup por dígitos, filtra < 8 dígitos, ordena desc por comprimento (celular tem 9, fixo tem 8)
+  const seen = new Set();
+  const valid = candidates.filter(v => {
+    const d = v.replace(/\D/g, '');
+    if (d.length < 8 || seen.has(d)) return false;
+    seen.add(d);
+    return true;
+  }).sort((a, b) => b.replace(/\D/g, '').length - a.replace(/\D/g, '').length);
+
+  return { celular: valid[0] || '', telefone: valid[1] || valid[0] || '', telefones: valid };
 }
 
 // Cache de contatos (módulo-level — persiste entre requests)
@@ -115,6 +133,8 @@ async function _fetchContatos() {
   const byCpf  = {};
   const byName = {};
   let pag = 1;
+  let totalCarregados = 0;
+  let totalSemFone    = 0;
   const MAX_PAGS = 500;
   while (pag <= MAX_PAGS) {
     const r = await _fetchContatosPage(pag);
@@ -124,27 +144,37 @@ async function _fetchContatos() {
     }
     const items = (r.retorno.contatos || []).map(i => i.contato);
     if (items.length === 0) break; // fim da paginação
+    let semFone = 0;
     for (const c of items) {
-      const phones = bestPhone(c);
-      const raw = phones.celular.replace(/\D/g, '');
-      if (raw.length < 8) continue;
-      const phoneData = { celular: phones.celular, telefone: phones.telefone };
+      const phones   = bestPhone(c);
+      const phoneData = { celular: phones.celular, telefone: phones.telefone, telefones: phones.telefones };
+      if (!phones.celular) semFone++;
+
+      // Indexa SEMPRE por ID/CPF/nome — mesmo sem telefone, para que o merge funcione.
+      // phoneData terá strings vazias quando não houver telefone; isso é intencional.
       if (c.id) byId[String(c.id)] = phoneData;
       const cpf = (c.cpf_cnpj || '').replace(/\D/g, '');
       if (cpf.length >= 11) byCpf[cpf] = phoneData;
-      // índice por nome completo normalizado
       const key = normName(c.nome);
       if (key) byName[key] = phoneData;
-      // índice por nome fantasia (trade name), se existir
       const fan = normName(c.fantasia);
       if (fan && !byName[fan]) byName[fan] = phoneData;
     }
+    totalCarregados += items.length;
+    totalSemFone    += semFone;
     const totalPags = parseInt(r.retorno.numero_paginas) || 999;
     if (pag >= totalPags) break;
     pag++;
     await sleep(300);
   }
-  console.log(`[contatos] carregados: ${Object.keys(byName).length} nomes / ${Object.keys(byId).length} IDs`);
+  // ── Auditoria de paginação ────────────────────────────────────────────────
+  console.log(
+    `[contatos] Auditoria: Foram carregados ${totalCarregados} contatos do Tiny` +
+    ` | com telefone: ${totalCarregados - totalSemFone}` +
+    ` | sem telefone: ${totalSemFone}` +
+    ` | IDs indexados: ${Object.keys(byId).length}` +
+    ` | nomes indexados: ${Object.keys(byName).length}`
+  );
   return { byId, byCpf, byName };
 }
 
@@ -172,7 +202,17 @@ function loadContatos() {
   return Promise.resolve({});
 }
 
-const EMPTY_PHONE = { celular: '', telefone: '' };
+const EMPTY_PHONE = { celular: '', telefone: '', telefones: [] };
+
+// Mescla array de telefones existente com um número extra (ex: celularPedido),
+// ignorando duplicatas (compara apenas dígitos).
+function mergePhones(arr, extra) {
+  if (!extra) return arr || [];
+  const base = arr || [];
+  const d = extra.replace(/\D/g, '');
+  if (d.length < 8 || base.some(t => t.replace(/\D/g, '') === d)) return base;
+  return [...base, extra];
+}
 
 function lookupContato(contatoMap, idContato, cpfCnpj, nome) {
   if (idContato) {
@@ -186,6 +226,14 @@ function lookupContato(contatoMap, idContato, cpfCnpj, nome) {
   }
   const nk = normName(nome);
   return (nk && contatoMap.byName?.[nk]) || EMPTY_PHONE;
+}
+
+// Extrai telefone direto do payload do pedido (fallback primário antes do mapa de contatos).
+// A pesquisa.php retorna campos rasos; se vier p.cliente aninhado, usa ele primeiro.
+function phoneFromOrder(p) {
+  const nested = (typeof p.cliente === 'object' && p.cliente) ? p.cliente : {};
+  // Mescla nested+root para que bestPhone veja todos os campos de uma vez
+  return bestPhone({ ...p, ...nested });
 }
 
 // ── Stale-while-revalidate ────────────────────────────────────────────────────
@@ -600,8 +648,11 @@ async function _buildHistoricoClientes(anos) {
     const nome = (p.nome||'').trim();
     if (!nome || nome.toLowerCase()==='consumidor final') continue;
     const dt = parseDateBR(p.data_pedido);
-    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, qtd: 0, total: 0, id_contato: null, cpf_cnpj: null };
-    if (dt && (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo)) clienteMap[nome].ultimo = dt;
+    if (!clienteMap[nome]) clienteMap[nome] = { nome, primeiro: null, ultimo: null, qtd: 0, total: 0, id_contato: null, cpf_cnpj: null, celularPedido: '' };
+    if (dt) {
+      if (!clienteMap[nome].primeiro || dt < clienteMap[nome].primeiro) clienteMap[nome].primeiro = dt;
+      if (!clienteMap[nome].ultimo   || dt > clienteMap[nome].ultimo)   clienteMap[nome].ultimo   = dt;
+    }
     clienteMap[nome].qtd++;
     clienteMap[nome].total += parseFloat(p.valor) || 0;
     if (!clienteMap[nome].id_contato) {
@@ -609,16 +660,28 @@ async function _buildHistoricoClientes(anos) {
       if (pid) clienteMap[nome].id_contato = String(pid);
     }
     if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
+    // Fallback primário: captura telefone direto do payload do pedido
+    if (!clienteMap[nome].celularPedido) {
+      const ph = phoneFromOrder(p);
+      if (ph.celular) clienteMap[nome].celularPedido = ph.celular;
+    }
   }
-  return Object.values(clienteMap).map(c => ({
-    nome:          c.nome,
-    ultimo_pedido: c.ultimo ? c.ultimo.toISOString().slice(0,10) : null,
-    dias_sem:      c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null,
-    qtd_pedidos:   c.qtd,
-    valor_total:   Math.round(c.total * 100) / 100,
-    id_contato:    c.id_contato,
-    cpf_cnpj:      c.cpf_cnpj,
-  })).sort((a,b) => (a.dias_sem??99999) - (b.dias_sem??99999));
+  return Object.values(clienteMap).map(c => {
+    const frequencia_dias = (c.qtd > 1 && c.primeiro && c.ultimo && c.primeiro < c.ultimo)
+      ? Math.round((c.ultimo - c.primeiro) / 86400000 / (c.qtd - 1))
+      : null;
+    return {
+      nome:            c.nome,
+      ultimo_pedido:   c.ultimo ? c.ultimo.toISOString().slice(0,10) : null,
+      dias_sem:        c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null,
+      qtd_pedidos:     c.qtd,
+      valor_total:     Math.round(c.total * 100) / 100,
+      id_contato:      c.id_contato,
+      cpf_cnpj:        c.cpf_cnpj,
+      celularPedido:   c.celularPedido || '',
+      frequencia_dias,
+    };
+  }).sort((a,b) => (a.dias_sem??99999) - (b.dias_sem??99999));
 }
 
 // ── VENDAS ────────────────────────────────────────────────────────────────────
@@ -704,8 +767,49 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
     }
 
     if (periodo === 0) {
-      // Geral: muito pesado para build síncrono (hist_5 = 5 anos, 60s+).
-      // SWR — numa Lambda quente o hit acima já teria respondido.
+      // Geral: tenta Supabase primeiro (dados persistidos pelo cron diário)
+      try {
+        const supabase = getSupabase();
+        const { data: sbData, error: sbErr } = await supabase
+          .from('crm_clientes')
+          .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em');
+        if (!sbErr && sbData?.length > 0) {
+          const newest = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
+          const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
+          if (ageHours < 25) {
+            const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+            const clientes = sortByTemp(sbData.map(r => {
+              // Recalcula dias_sem / temperatura a partir do ultimo_pedido para sempre ficar preciso
+              let diasSem = r.dias_sem;
+              if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
+                const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
+                if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
+              }
+              return {
+                nome:            r.nome,
+                celular:         r.celular  || '',
+                telefone:        r.telefone || '',
+                telefones:       r.telefones || [],
+                ultimo_pedido:   r.ultimo_pedido || '—',
+                dias_sem:        diasSem,
+                temperatura:     classifyTemp(diasSem),
+                qtd_pedidos:     r.qtd_pedidos,
+                ticket_medio:    parseFloat(r.ticket_medio),
+                frequencia_dias: r.frequencia_dias,
+                total:           parseFloat(r.total),
+              };
+            }));
+            const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
+            const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
+            cache.set(KEY, { ts: Date.now(), data: sbResult });
+            return res.json({ ok: true, stale: false, source: 'supabase', ...sbResult });
+          }
+        }
+      } catch (sbErr) {
+        console.warn('[crm-temp] Supabase indisponível, usando Tiny:', sbErr.message);
+      }
+
+      // Supabase vazio ou stale — inicia build via Tiny em background (SWR)
       swrBuild(KEY, () => _buildCrmTemp(0));
       return loadingResponse(res, 'Histórico completo ainda não gerado. Aguarde e atualize a página.');
     }
@@ -742,19 +846,46 @@ async function _buildCrmTemp(periodo) {
       _contatosCache = { ts: Date.now(), data: d };
       return d;
     });
+    let _mergeFalhasGeral = 0;
     const clientes = sortByTemp(histData.map(h => {
       const ct = lookupContato(contatoMap, h.id_contato, h.cpf_cnpj, h.nome);
+      // Triple fallback: 1º pedido → 2º/3º mapa de contatos (byId/byCpf/byName)
+      const celular  = h.celularPedido || ct.celular  || '';
+      const telefone = ct.telefone     || h.celularPedido || '';
+
+      if (!celular && _mergeFalhasGeral < 5) {
+        const motivo = !h.id_contato && !h.cpf_cnpj
+          ? 'Contato não encontrado na lista de loadContatos (sem ID e sem CPF no histórico)'
+          : 'Contato sem telefone preenchido';
+        console.log(`FALHA NO MERGE -> Cliente: ${h.nome} | ID Contato: ${h.id_contato || '—'} | Motivo: ${motivo}`);
+        _mergeFalhasGeral++;
+        if (_mergeFalhasGeral === 5) console.log('FALHA NO MERGE -> (log limitado a 5 — demais omitidos)');
+      }
+
+      // DEBUG TEMPORÁRIO — remover após confirmar que a Lídia aparece com telefone
+      if (h.nome.toLowerCase().includes('lidia mara')) {
+        console.log('DEBUG LIDIA (Geral):', {
+          telefonePedido:  h.celularPedido || '(vazio)',
+          telefoneContato: ct.celular      || '(vazio)',
+          linkFinal:       celular         || '(vazio)',
+          id_contato:      h.id_contato    || '(vazio)',
+          cpf_cnpj:        h.cpf_cnpj      || '(vazio)',
+        });
+      }
+
+      const telefones = mergePhones(ct.telefones, h.celularPedido);
       return {
-        nome:          h.nome,
-        ultimo_pedido: isoToBR(h.ultimo_pedido),
-        dias_sem:      h.dias_sem,
-        temperatura:   classifyTemp(h.dias_sem),
-        qtd_pedidos:   h.qtd_pedidos,
-        ticket_medio:  h.qtd_pedidos > 0 ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
-        freq_dias:     null,
-        total:         h.valor_total,
-        celular:       ct.celular,
-        telefone:      ct.telefone,
+        nome:            h.nome,
+        ultimo_pedido:   isoToBR(h.ultimo_pedido),
+        dias_sem:        h.dias_sem,
+        temperatura:     classifyTemp(h.dias_sem),
+        qtd_pedidos:     h.qtd_pedidos,
+        ticket_medio:    h.qtd_pedidos > 0 ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
+        frequencia_dias: h.frequencia_dias ?? null,
+        total:           h.valor_total,
+        celular,
+        telefone,
+        telefones,
       };
     }));
 
@@ -777,7 +908,7 @@ async function _buildCrmTemp(periodo) {
     if (!nome || nome.toLowerCase() === 'consumidor final') continue;
     const dt  = parseDateBR(p.data_pedido);
     const val = parseFloat(p.valor) || 0;
-    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0, id_contato: null, cpf_cnpj: null };
+    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0, id_contato: null, cpf_cnpj: null, celularPedido: '' };
     if (dt) {
       if (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo) clienteMap[nome].ultimo = dt;
       clienteMap[nome].datas.push(dt.getTime());
@@ -789,35 +920,78 @@ async function _buildCrmTemp(periodo) {
       if (pid) clienteMap[nome].id_contato = String(pid);
     }
     if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
+    // Fallback primário: telefone direto do payload do pedido (antes de consultar contatos)
+    if (!clienteMap[nome].celularPedido) {
+      const ph = phoneFromOrder(p);
+      if (ph.celular) clienteMap[nome].celularPedido = ph.celular;
+    }
   }
 
+  let _mergeFalhas = 0;
   const clientes = sortByTemp(Object.values(clienteMap).map(c => {
     const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
-    let freqDias = null;
+    let frequencia_dias = null;
     if (c.datas.length >= 2) {
-      const s = [...c.datas].sort((a,b) => a-b);
-      let g = 0;
-      for (let i = 1; i < s.length; i++) g += (s[i]-s[i-1]) / 86400000;
-      freqDias = Math.round(g / (s.length - 1));
+      const s = [...c.datas].sort((a, b) => a - b);
+      frequencia_dias = Math.round((s[s.length - 1] - s[0]) / 86400000 / (s.length - 1));
     }
     const ct = lookupContato(contatoMap, c.id_contato, c.cpf_cnpj, c.nome);
+    // Triple fallback: 1º pedido → 2º/3º mapa de contatos (byId/byCpf/byName)
+    const celular   = c.celularPedido || ct.celular  || '';
+    const telefone  = ct.telefone     || c.celularPedido || '';
+    const telefones = mergePhones(ct.telefones, c.celularPedido);
+
+    if (!celular && _mergeFalhas < 5) {
+      const motivo = !c.id_contato && !c.cpf_cnpj
+        ? 'Contato não encontrado na lista de loadContatos (sem ID e sem CPF no pedido)'
+        : 'Contato sem telefone preenchido';
+      console.log(`FALHA NO MERGE -> Cliente: ${c.nome} | ID Contato: ${c.id_contato || '—'} | Motivo: ${motivo}`);
+      _mergeFalhas++;
+      if (_mergeFalhas === 5) console.log('FALHA NO MERGE -> (log limitado a 5 — demais omitidos)');
+    }
+
+    // DEBUG TEMPORÁRIO — remover após confirmar que a Lídia aparece com telefone
+    if (c.nome.toLowerCase().includes('lidia mara')) {
+      console.log('DEBUG LIDIA:', {
+        telefonePedido:  c.celularPedido || '(vazio)',
+        telefoneContato: ct.celular      || '(vazio)',
+        linkFinal:       celular         || '(vazio)',
+        id_contato:      c.id_contato    || '(vazio)',
+        cpf_cnpj:        c.cpf_cnpj      || '(vazio)',
+      });
+    }
+
     return {
-      nome:          c.nome,
-      ultimo_pedido: c.ultimo ? formatDateBR(c.ultimo) : '—',
-      dias_sem:      diasSem,
-      temperatura:   classifyTemp(diasSem),
-      qtd_pedidos:   c.qtd,
-      ticket_medio:  Math.round((c.qtd > 0 ? c.totalValor / c.qtd : 0) * 100) / 100,
-      freq_dias:     freqDias,
-      total:         Math.round(c.totalValor * 100) / 100,
-      celular:       ct.celular,
-      telefone:      ct.telefone,
+      nome:            c.nome,
+      ultimo_pedido:   c.ultimo ? formatDateBR(c.ultimo) : '—',
+      dias_sem:        diasSem,
+      temperatura:     classifyTemp(diasSem),
+      qtd_pedidos:     c.qtd,
+      ticket_medio:    Math.round((c.qtd > 0 ? c.totalValor / c.qtd : 0) * 100) / 100,
+      frequencia_dias: frequencia_dias,
+      total:           Math.round(c.totalValor * 100) / 100,
+      celular,
+      telefone,
+      telefones,
     };
   }));
 
   const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
   return { clientes, resumo, perfil, total: clientes.length, periodo };
 }
+
+// ── Sync CRM manual (admin) ────────────────────────────────────────────────────
+// Aciona o mesmo sync do cron sob demanda, sem esperar o horário das 3h.
+router.post('/sync-crm', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const { syncCrmToSupabase } = require('../jobs/syncCrm');
+    res.json({ ok: true, msg: 'Sync iniciado em background. Acompanhe os logs do servidor.' });
+    // Roda após enviar a resposta para não bloquear o request
+    syncCrmToSupabase(_buildCrmTemp).catch(e => console.error('[sync-crm manual]', e.message));
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
 
 // ── Cache status (debug) ──────────────────────────────────────────────────────
 router.get('/cache-status', authenticateToken, authorize('admin'), (req, res) => {
@@ -856,3 +1030,4 @@ setTimeout(() => {
 }, 5000); // 5s após o boot para não atrasar o startup
 
 module.exports = router;
+module.exports._buildCrmTemp = _buildCrmTemp;
