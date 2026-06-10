@@ -763,37 +763,31 @@ function sortByTemp(arr) {
   );
 }
 
-// Vercel Lambda suspende o processo após res.json() — builds em background (SWR) ficam
-// orphan e nunca gravam no cache. Estratégia híbrida:
-//   • periodo > 0  (30/90/120d): build síncrono — cabe nos 60s do maxDuration
-//   • periodo = 0  (Geral)     : SWR puro — hist_5 leva 60s+ numa Lambda fria,
-//                                 então retorna loading imediatamente; numa Lambda
-//                                 quente que já tem hist_5 retorna dados no próximo hit.
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   const periodo = Math.max(parseInt(req.query.periodo ?? '30'), 0);
   const KEY = `crm_temp_${periodo}`;
 
   try {
+    // 1. Cache em memória (válido por 2h)
     const hit = swrGet(KEY, CACHE_CRM);
     if (hit) {
       if (hit.stale) swrBuild(KEY, () => _buildCrmTemp(periodo));
       return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
     }
 
+    // 2. Para periodo=0 (Geral): tenta Supabase primeiro — retorno instantâneo
     if (periodo === 0) {
-      // Geral: tenta Supabase primeiro (dados persistidos pelo cron diário)
       try {
         const supabase = getSupabase();
         const { data: sbData, error: sbErr } = await supabase
           .from('crm_clientes')
           .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em');
         if (!sbErr && sbData?.length > 0) {
-          const newest = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
+          const newest   = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
           const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
           if (ageHours < 25) {
             const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
             const clientes = sortByTemp(sbData.map(r => {
-              // Recalcula dias_sem / temperatura a partir do ultimo_pedido para sempre ficar preciso
               let diasSem = r.dias_sem;
               if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
                 const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
@@ -820,17 +814,23 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
           }
         }
       } catch (sbErr) {
-        console.warn('[crm-temp] Supabase indisponível, usando Tiny:', sbErr.message);
+        console.warn('[crm-temp] Supabase indisponível:', sbErr.message);
       }
-
-      // Supabase vazio ou stale — inicia build via Tiny em background (SWR)
-      swrBuild(KEY, () => _buildCrmTemp(0));
-      return loadingResponse(res, 'Histórico completo ainda não gerado. Aguarde e atualize a página.');
     }
 
-    // 30 / 90 / 120 dias: build síncrono — cabível em ~15-45s dentro do maxDuration.
+    // 3. Build síncrono — funciona em todos os períodos (incluindo Geral)
+    //    Geral usa 2 anos de histórico para caber no limite de 60s do Vercel.
+    //    Após construir, persiste no Supabase para que a próxima chamada seja instantânea.
     const data = await _buildCrmTemp(periodo);
     cache.set(KEY, { ts: Date.now(), data });
+
+    if (periodo === 0) {
+      // Persiste no Supabase em background (não bloqueia a resposta)
+      const { syncCrmToSupabase } = require('../jobs/syncCrm');
+      syncCrmToSupabase(() => Promise.resolve(data))
+        .catch(e => console.warn('[crm-temp] supabase persist falhou:', e.message));
+    }
+
     return res.json({ ok: true, stale: false, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
@@ -842,14 +842,15 @@ async function _buildCrmTemp(periodo) {
 
   if (periodo === 0) {
     // Geral: base = TODOS os contatos cadastrados no Tiny (não apenas quem comprou)
+    // Usa 2 anos de histórico para caber no limite de 60s do Vercel (vs 5 anos antes)
     let histData = null;
-    const histHit = swrGet('hist_5', CACHE_HIST);
+    const histHit = swrGet('hist_2', CACHE_HIST);
     if (histHit) {
       histData = histHit.data;
-      if (histHit.stale) swrBuild('hist_5', () => _buildHistoricoClientes(5));
+      if (histHit.stale) swrBuild('hist_2', () => _buildHistoricoClientes(2));
     } else {
-      histData = await _buildHistoricoClientes(5);
-      cache.set('hist_5', { ts: Date.now(), data: histData });
+      histData = await _buildHistoricoClientes(2);
+      cache.set('hist_2', { ts: Date.now(), data: histData });
     }
 
     const contatoMap = _contatosCache?.data || await _fetchContatos().then(d => {
