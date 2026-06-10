@@ -155,7 +155,13 @@ async function _fetchContatos() {
       const key = normName(c.nome);
       const fan = normName(c.fantasia);
 
-      const phoneData = { celular: phones.celular, telefone: phones.telefone, telefones: phones.telefones };
+      // Preserva campos brutos do cadastro — fonte de verdade para WhatsApp
+      const phoneData = {
+        celular:  (c.celular  || '').trim(),
+        telefone: (c.telefone || '').trim(),
+        fone:     (c.fone     || '').trim(),
+        telefones: phones.telefones,
+      };
 
       if (id)              byId[id]  = phoneData;
       if (cpf.length >= 11) byCpf[cpf] = phoneData;
@@ -172,8 +178,9 @@ async function _fetchContatos() {
         cidade:   c.cidade    || '',
         uf:       c.uf        || '',
         situacao: c.situacao  || '',
-        celular:  phones.celular,
-        telefone: phones.telefone,
+        celular:  (c.celular  || '').trim(),
+        telefone: (c.telefone || '').trim(),
+        fone:     (c.fone     || '').trim(),
         telefones: phones.telefones,
       });
     }
@@ -216,16 +223,22 @@ function loadContatos() {
   return Promise.resolve({});
 }
 
-const EMPTY_PHONE = { celular: '', telefone: '', telefones: [] };
+const EMPTY_PHONE = { celular: '', telefone: '', fone: '', telefones: [] };
 
-// Mescla array de telefones existente com um número extra (ex: celularPedido),
-// ignorando duplicatas (compara apenas dígitos).
-function mergePhones(arr, extra) {
-  if (!extra) return arr || [];
-  const base = arr || [];
-  const d = extra.replace(/\D/g, '');
-  if (d.length < 8 || base.some(t => t.replace(/\D/g, '') === d)) return base;
-  return [...base, extra];
+// Normaliza array de telefones brutos para formato WhatsApp (dígitos + '55').
+// Entrada: ['(61) 98152-0717', '61 3200-1234', null, '']
+// Saída:   ['5561981520717', '556132001234']
+function normalizePhones(rawList) {
+  const seen = new Set();
+  const result = [];
+  for (const raw of rawList) {
+    if (!raw) continue;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length < 8) continue;
+    const wa = (digits.startsWith('55') && digits.length >= 12) ? digits : '55' + digits;
+    if (!seen.has(wa)) { seen.add(wa); result.push(wa); }
+  }
+  return result;
 }
 
 function lookupContato(contatoMap, idContato, cpfCnpj, nome) {
@@ -882,9 +895,10 @@ async function _buildCrmTemp(periodo) {
                || histByName[nk]
                || null;
 
-      const celular   = c.celular   || (h?.celularPedido || '');
-      const telefone  = c.telefone  || '';
-      const telefones = mergePhones(c.telefones, h?.celularPedido || '');
+      // CADASTRO = fonte de verdade para contato (celular, telefone, fone)
+      const telefones = normalizePhones([c.celular, c.telefone, c.fone]);
+      const celular   = telefones[0] || '';
+      const telefone  = telefones[1] || telefones[0] || '';
       const diasSem   = h?.dias_sem ?? null;
 
       return {
@@ -915,13 +929,15 @@ async function _buildCrmTemp(periodo) {
       : _fetchContatos().then(d => { _contatosCache = { ts: Date.now(), data: d }; return d; }),
   ]);
 
+  // Passo 1: Histórico e Temperatura — pedidos usados APENAS para dados financeiros
   const clienteMap = {};
   for (const p of orders) {
     const nome = (p.nome || '').trim();
-    if (!nome || nome.toLowerCase() === 'consumidor final') continue;
+    if (!nome || nome.toLowerCase() === 'consumidor final' || nome.toLowerCase() === 'cliente padrão') continue;
     const dt  = parseDateBR(p.data_pedido);
     const val = parseFloat(p.valor) || 0;
-    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0, id_contato: null, cpf_cnpj: null, celularPedido: '' };
+    // Passo 2: IDs para cruzar com cadastro — sem capturar telefone do pedido
+    if (!clienteMap[nome]) clienteMap[nome] = { nome, ultimo: null, datas: [], totalValor: 0, qtd: 0, id_contato: null, cpf_cnpj: null };
     if (dt) {
       if (!clienteMap[nome].ultimo || dt > clienteMap[nome].ultimo) clienteMap[nome].ultimo = dt;
       clienteMap[nome].datas.push(dt.getTime());
@@ -933,14 +949,8 @@ async function _buildCrmTemp(periodo) {
       if (pid) clienteMap[nome].id_contato = String(pid);
     }
     if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
-    // Fallback primário: telefone direto do payload do pedido (antes de consultar contatos)
-    if (!clienteMap[nome].celularPedido) {
-      const ph = phoneFromOrder(p);
-      if (ph.celular) clienteMap[nome].celularPedido = ph.celular;
-    }
   }
 
-  let _mergeFalhas = 0;
   const clientes = sortByTemp(Object.values(clienteMap).map(c => {
     const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
     let frequencia_dias = null;
@@ -948,31 +958,14 @@ async function _buildCrmTemp(periodo) {
       const s = [...c.datas].sort((a, b) => a - b);
       frequencia_dias = Math.round((s[s.length - 1] - s[0]) / 86400000 / (s.length - 1));
     }
+
+    // Passo 3: Busca no CADASTRO (fonte de verdade para contato)
     const ct = lookupContato(contatoMap, c.id_contato, c.cpf_cnpj, c.nome);
-    // Triple fallback: 1º pedido → 2º/3º mapa de contatos (byId/byCpf/byName)
-    const celular   = c.celularPedido || ct.celular  || '';
-    const telefone  = ct.telefone     || c.celularPedido || '';
-    const telefones = mergePhones(ct.telefones, c.celularPedido);
 
-    if (!celular && _mergeFalhas < 5) {
-      const motivo = !c.id_contato && !c.cpf_cnpj
-        ? 'Contato não encontrado na lista de loadContatos (sem ID e sem CPF no pedido)'
-        : 'Contato sem telefone preenchido';
-      console.log(`FALHA NO MERGE -> Cliente: ${c.nome} | ID Contato: ${c.id_contato || '—'} | Motivo: ${motivo}`);
-      _mergeFalhas++;
-      if (_mergeFalhas === 5) console.log('FALHA NO MERGE -> (log limitado a 5 — demais omitidos)');
-    }
-
-    // DEBUG TEMPORÁRIO — remover após confirmar que a Lídia aparece com telefone
-    if (c.nome.toLowerCase().includes('lidia mara')) {
-      console.log('DEBUG LIDIA:', {
-        telefonePedido:  c.celularPedido || '(vazio)',
-        telefoneContato: ct.celular      || '(vazio)',
-        linkFinal:       celular         || '(vazio)',
-        id_contato:      c.id_contato    || '(vazio)',
-        cpf_cnpj:        c.cpf_cnpj      || '(vazio)',
-      });
-    }
+    // Passo 4: Extrai e normaliza telefones exclusivamente do CADASTRO (celular, telefone, fone)
+    const telefones = normalizePhones([ct.celular, ct.telefone, ct.fone]);
+    const celular   = telefones[0] || '';
+    const telefone  = telefones[1] || telefones[0] || '';
 
     return {
       nome:            c.nome,
