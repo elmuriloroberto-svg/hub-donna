@@ -922,11 +922,30 @@ async function _buildCrmTemp(periodo) {
 
   // Períodos limitados (30 / 90 / 120 dias) — paginação completa sem limite artificial
   const params  = { dataInicial: formatDateBR(new Date(Date.now() - periodo * 86400000)) };
-  const [orders, contatoMap] = await Promise.all([
+
+  // Carrega pedidos + mapa de contatos (lista) em paralelo.
+  // Também tenta carregar mapa de telefones do Supabase — que tem celular real
+  // de contato.obter.php (syncCrmFull), algo que contatos.pesquisa.php não retorna.
+  const [orders, contatoMap, sbPhoneMap] = await Promise.all([
     fetchAllOrders(params),
     _contatosCache
       ? Promise.resolve(_contatosCache.data)
       : _fetchContatos().then(d => { _contatosCache = { ts: Date.now(), data: d }; return d; }),
+    (async () => {
+      const map = {};
+      try {
+        const supabase = getSupabase();
+        const { data } = await supabase
+          .from('crm_clientes')
+          .select('nome, celular, telefone, telefones');
+        if (data?.length) {
+          for (const r of data) map[normName(r.nome)] = r;
+        }
+      } catch (e) {
+        console.warn('[crm-temp] Supabase phone lookup indisponível:', e.message);
+      }
+      return map;
+    })(),
   ]);
 
   // Passo 1: Histórico e Temperatura — pedidos usados APENAS para dados financeiros
@@ -959,13 +978,19 @@ async function _buildCrmTemp(periodo) {
       frequencia_dias = Math.round((s[s.length - 1] - s[0]) / 86400000 / (s.length - 1));
     }
 
-    // Passo 3: Busca no CADASTRO (fonte de verdade para contato)
+    // Passo 3: Fonte de verdade para telefone = Supabase (celular real via contato.obter.php)
+    // Fallback: contatoMap (lista endpoint — pode não ter celular, mas tem fone)
+    const sb = sbPhoneMap[normName(c.nome)];
     const ct = lookupContato(contatoMap, c.id_contato, c.cpf_cnpj, c.nome);
 
-    // Passo 4: Extrai e normaliza telefones exclusivamente do CADASTRO (celular, telefone, fone)
-    const telefones = normalizePhones([ct.celular, ct.telefone, ct.fone]);
-    const celular   = telefones[0] || '';
-    const telefone  = telefones[1] || telefones[0] || '';
+    // Passo 4: Monta array normalizado — Supabase primeiro, lista do Tiny como complemento
+    const telefones = normalizePhones([
+      sb?.celular  || ct.celular,
+      sb?.telefone || ct.telefone,
+      ct.fone,
+    ]);
+    const celular  = telefones[0] || '';
+    const telefone = telefones[1] || telefones[0] || '';
 
     return {
       nome:            c.nome,
