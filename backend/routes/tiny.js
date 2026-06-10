@@ -132,6 +132,7 @@ async function _fetchContatos() {
   const byId   = {};
   const byCpf  = {};
   const byName = {};
+  const todos  = []; // lista completa — base do CRM de contatos
   let pag = 1;
   let totalCarregados = 0;
   let totalSemFone    = 0;
@@ -143,22 +144,38 @@ async function _fetchContatos() {
       break;
     }
     const items = (r.retorno.contatos || []).map(i => i.contato);
-    if (items.length === 0) break; // fim da paginação
+    if (items.length === 0) break;
     let semFone = 0;
     for (const c of items) {
-      const phones   = bestPhone(c);
-      const phoneData = { celular: phones.celular, telefone: phones.telefone, telefones: phones.telefones };
+      const phones = bestPhone(c);
       if (!phones.celular) semFone++;
 
-      // Indexa SEMPRE por ID/CPF/nome — mesmo sem telefone, para que o merge funcione.
-      // phoneData terá strings vazias quando não houver telefone; isso é intencional.
-      if (c.id) byId[String(c.id)] = phoneData;
+      const id  = c.id ? String(c.id) : '';
       const cpf = (c.cpf_cnpj || '').replace(/\D/g, '');
-      if (cpf.length >= 11) byCpf[cpf] = phoneData;
       const key = normName(c.nome);
-      if (key) byName[key] = phoneData;
       const fan = normName(c.fantasia);
+
+      const phoneData = { celular: phones.celular, telefone: phones.telefone, telefones: phones.telefones };
+
+      if (id)              byId[id]  = phoneData;
+      if (cpf.length >= 11) byCpf[cpf] = phoneData;
+      if (key)             byName[key] = phoneData;
       if (fan && !byName[fan]) byName[fan] = phoneData;
+
+      // Guarda o contato completo para o CRM baseado em contatos
+      todos.push({
+        id,
+        nome:     (c.nome     || '').trim(),
+        fantasia: (c.fantasia || '').trim(),
+        cpf_cnpj: c.cpf_cnpj || '',
+        email:    c.email     || '',
+        cidade:   c.cidade    || '',
+        uf:       c.uf        || '',
+        situacao: c.situacao  || '',
+        celular:  phones.celular,
+        telefone: phones.telefone,
+        telefones: phones.telefones,
+      });
     }
     totalCarregados += items.length;
     totalSemFone    += semFone;
@@ -167,15 +184,12 @@ async function _fetchContatos() {
     pag++;
     await sleep(300);
   }
-  // ── Auditoria de paginação ────────────────────────────────────────────────
   console.log(
-    `[contatos] Auditoria: Foram carregados ${totalCarregados} contatos do Tiny` +
-    ` | com telefone: ${totalCarregados - totalSemFone}` +
-    ` | sem telefone: ${totalSemFone}` +
-    ` | IDs indexados: ${Object.keys(byId).length}` +
-    ` | nomes indexados: ${Object.keys(byName).length}`
+    `[contatos] ${totalCarregados} carregados` +
+    ` | com fone: ${totalCarregados - totalSemFone}` +
+    ` | sem fone: ${totalSemFone}`
   );
-  return { byId, byCpf, byName };
+  return { byId, byCpf, byName, todos };
 }
 
 // Retorna contatos do cache imediatamente (mesmo stale).
@@ -827,17 +841,13 @@ async function _buildCrmTemp(periodo) {
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
   if (periodo === 0) {
-    // Geral: 5 anos completos — reutiliza hist_5 se disponível
+    // Geral: base = TODOS os contatos cadastrados no Tiny (não apenas quem comprou)
     let histData = null;
     const histHit = swrGet('hist_5', CACHE_HIST);
     if (histHit) {
       histData = histHit.data;
-      if (histHit.stale) {
-        // Reconstrói hist_5 em background (não bloqueia o CRM temp)
-        swrBuild('hist_5', () => _buildHistoricoClientes(5));
-      }
+      if (histHit.stale) swrBuild('hist_5', () => _buildHistoricoClientes(5));
     } else {
-      // Precisa construir agora
       histData = await _buildHistoricoClientes(5);
       cache.set('hist_5', { ts: Date.now(), data: histData });
     }
@@ -846,43 +856,45 @@ async function _buildCrmTemp(periodo) {
       _contatosCache = { ts: Date.now(), data: d };
       return d;
     });
-    let _mergeFalhasGeral = 0;
-    const clientes = sortByTemp(histData.map(h => {
-      const ct = lookupContato(contatoMap, h.id_contato, h.cpf_cnpj, h.nome);
-      // Triple fallback: 1º pedido → 2º/3º mapa de contatos (byId/byCpf/byName)
-      const celular  = h.celularPedido || ct.celular  || '';
-      const telefone = ct.telefone     || h.celularPedido || '';
 
-      if (!celular && _mergeFalhasGeral < 5) {
-        const motivo = !h.id_contato && !h.cpf_cnpj
-          ? 'Contato não encontrado na lista de loadContatos (sem ID e sem CPF no histórico)'
-          : 'Contato sem telefone preenchido';
-        console.log(`FALHA NO MERGE -> Cliente: ${h.nome} | ID Contato: ${h.id_contato || '—'} | Motivo: ${motivo}`);
-        _mergeFalhasGeral++;
-        if (_mergeFalhasGeral === 5) console.log('FALHA NO MERGE -> (log limitado a 5 — demais omitidos)');
-      }
+    // Indexa histórico de pedidos por 3 chaves para lookup O(1)
+    const histById   = {};
+    const histByCpf  = {};
+    const histByName = {};
+    for (const h of histData) {
+      if (h.id_contato)                         histById[h.id_contato]            = h;
+      const cpf = (h.cpf_cnpj || '').replace(/\D/g, '');
+      if (cpf.length >= 11)                     histByCpf[cpf]                    = h;
+      const nk = normName(h.nome);
+      if (nk)                                   histByName[nk]                    = h;
+    }
 
-      // DEBUG TEMPORÁRIO — remover após confirmar que a Lídia aparece com telefone
-      if (h.nome.toLowerCase().includes('lidia mara')) {
-        console.log('DEBUG LIDIA (Geral):', {
-          telefonePedido:  h.celularPedido || '(vazio)',
-          telefoneContato: ct.celular      || '(vazio)',
-          linkFinal:       celular         || '(vazio)',
-          id_contato:      h.id_contato    || '(vazio)',
-          cpf_cnpj:        h.cpf_cnpj      || '(vazio)',
-        });
-      }
+    // Base = todos os contatos cadastrados no Tiny
+    const base = contatoMap.todos || [];
+    console.log(`[crm-geral] base de contatos: ${base.length} | histórico: ${histData.length}`);
 
-      const telefones = mergePhones(ct.telefones, h.celularPedido);
+    const clientes = sortByTemp(base.map(c => {
+      const cpf = (c.cpf_cnpj || '').replace(/\D/g, '');
+      const nk  = normName(c.nome);
+      const h   = histById[c.id]
+               || (cpf.length >= 11 ? histByCpf[cpf] : null)
+               || histByName[nk]
+               || null;
+
+      const celular   = c.celular   || (h?.celularPedido || '');
+      const telefone  = c.telefone  || '';
+      const telefones = mergePhones(c.telefones, h?.celularPedido || '');
+      const diasSem   = h?.dias_sem ?? null;
+
       return {
-        nome:            h.nome,
-        ultimo_pedido:   isoToBR(h.ultimo_pedido),
-        dias_sem:        h.dias_sem,
-        temperatura:     classifyTemp(h.dias_sem),
-        qtd_pedidos:     h.qtd_pedidos,
-        ticket_medio:    h.qtd_pedidos > 0 ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
-        frequencia_dias: h.frequencia_dias ?? null,
-        total:           h.valor_total,
+        nome:            c.nome,
+        ultimo_pedido:   h ? isoToBR(h.ultimo_pedido) : '—',
+        dias_sem:        diasSem,
+        temperatura:     classifyTemp(diasSem),
+        qtd_pedidos:     h?.qtd_pedidos  || 0,
+        ticket_medio:    (h && h.qtd_pedidos > 0) ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
+        frequencia_dias: h?.frequencia_dias ?? null,
+        total:           h?.valor_total  || 0,
         celular,
         telefone,
         telefones,
