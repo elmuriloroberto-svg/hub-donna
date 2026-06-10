@@ -820,9 +820,12 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
               total:           parseFloat(r.total),
             };
           });
-          // Para período > 0: mostra apenas quem comprou dentro do período
+          // Para período > 0: filtra quem comprou dentro do período
           if (periodo > 0) {
             clientes = clientes.filter(c => c.dias_sem !== null && c.dias_sem <= periodo && c.qtd_pedidos > 0);
+            // Se ficou vazio, Supabase ainda não tem dados financeiros (syncCrmFull pendente)
+            // Cai no fallback do Tiny para não exibir tela vazia
+            if (clientes.length === 0) throw new Error('supabase_sem_dados_periodo');
           }
           clientes = sortByTemp(clientes);
           const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
