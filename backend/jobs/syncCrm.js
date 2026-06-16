@@ -9,7 +9,11 @@
  */
 
 const https = require('https');
+const fs    = require('fs');
+const path  = require('path');
 const { getSupabase } = require('../lib/supabase');
+
+const ROWS_CACHE_FILE = path.join(__dirname, '../../.crm-rows-cache.json');
 
 const BATCH_SIZE  = 500;
 const SLEEP_MS    = 320; // entre chamadas ao Tiny — respeita rate limit
@@ -71,16 +75,27 @@ function classifyTemp(d) {
   return 'frio';
 }
 
-// ── Passo 1: lista todos os IDs de contatos (rápido, 24 págs) ─────────────────
+// ── Passo 1: lista todos os IDs de contatos ───────────────────────────────────
+// 3 tentativas com backoff por página para sobreviver a rate limits do Tiny.
 async function fetchAllContactIds() {
   const ids = [];
   for (let pag = 1; ; pag++) {
-    const r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
-    if (r?.retorno?.status !== 'OK') break;
+    let r = null;
+    for (let t = 1; t <= 3; t++) {
+      r = await tinyGet('contatos.pesquisa.php', { pagina: pag });
+      if (r?.retorno?.status === 'OK') break;
+      console.warn(`[syncCrm] IDs pág ${pag} tentativa ${t} falhou — aguardando ${t * 2}s`);
+      await sleep(t * 2000);
+    }
+    if (r?.retorno?.status !== 'OK') {
+      console.warn(`[syncCrm] IDs pág ${pag} desistiu após 3 tentativas — parando.`);
+      break;
+    }
     const items = (r.retorno.contatos || []).map(c => c.contato);
     if (!items.length) break;
     for (const c of items) if (c.id) ids.push(String(c.id));
-    if (pag >= parseInt(r.retorno.numero_paginas || 1)) break;
+    const totalPags = parseInt(r.retorno.numero_paginas || 1);
+    if (pag >= totalPags) break;
     await sleep(SLEEP_MS);
   }
   return ids;
@@ -230,14 +245,33 @@ async function syncCrmFull() {
     });
   }
 
-  // 5. Upsert no Supabase
-  console.log(`[syncCrm] Upserting ${rows.length} contatos no Supabase...`);
+  // 5. Deduplica por nome — nomes duplicados causam erro no PostgreSQL upsert.
+  const seenNomes = new Set();
+  const rowsDedup = rows.filter(r => {
+    if (seenNomes.has(r.nome)) return false;
+    seenNomes.add(r.nome);
+    return true;
+  });
+  if (rowsDedup.length < rows.length) {
+    console.log(`[syncCrm] Dedup: ${rows.length} → ${rowsDedup.length} (${rows.length - rowsDedup.length} duplicados removidos)`);
+  }
+
+  // Salva em arquivo local — se o upsert falhar, permite retentar sem refazer o fetch
+  try {
+    fs.writeFileSync(ROWS_CACHE_FILE, JSON.stringify(rowsDedup));
+    console.log(`[syncCrm] Dados salvos em cache local (${rowsDedup.length} registros).`);
+  } catch (e) {
+    console.warn('[syncCrm] Não foi possível salvar cache local:', e.message);
+  }
+
+  // 6. Upsert no Supabase
+  console.log(`[syncCrm] Upserting ${rowsDedup.length} contatos no Supabase...`);
   const supabase = getSupabase();
   let erros = 0;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+  for (let i = 0; i < rowsDedup.length; i += BATCH_SIZE) {
     const { error } = await supabase
       .from('crm_clientes')
-      .upsert(rows.slice(i, i + BATCH_SIZE), { onConflict: 'nome' });
+      .upsert(rowsDedup.slice(i, i + BATCH_SIZE), { onConflict: 'nome' });
     if (error) { erros++; console.error(`[syncCrm] Erro lote ${Math.floor(i/BATCH_SIZE)+1}:`, error.message); }
   }
 
@@ -289,4 +323,26 @@ async function syncCrmToSupabase(buildCrmTemp) {
   }
 }
 
-module.exports = { syncCrmFull, syncCrmToSupabase };
+// Reenvia para o Supabase usando o cache local salvo pelo último syncCrmFull.
+// Útil quando o fetch foi bem-sucedido mas o upsert falhou.
+async function upsertFromCache() {
+  if (!fs.existsSync(ROWS_CACHE_FILE)) {
+    console.error('[syncCrm] Cache local não encontrado:', ROWS_CACHE_FILE);
+    return { ok: false, msg: 'Cache não encontrado' };
+  }
+  const rows = JSON.parse(fs.readFileSync(ROWS_CACHE_FILE, 'utf8'));
+  console.log(`[syncCrm] Upserting ${rows.length} registros do cache local...`);
+  const supabase = getSupabase();
+  let erros = 0;
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const { error } = await supabase
+      .from('crm_clientes')
+      .upsert(rows.slice(i, i + BATCH_SIZE), { onConflict: 'nome' });
+    if (error) { erros++; console.error(`[syncCrm] Erro lote ${Math.floor(i/BATCH_SIZE)+1}:`, error.message); }
+    else console.log(`[syncCrm] Lote ${Math.floor(i/BATCH_SIZE)+1} ok`);
+  }
+  console.log(`[syncCrm] Upsert concluído: ${rows.length} registros, ${erros} erros.`);
+  return { ok: erros === 0, total: rows.length, erros };
+}
+
+module.exports = { syncCrmFull, syncCrmToSupabase, upsertFromCache };

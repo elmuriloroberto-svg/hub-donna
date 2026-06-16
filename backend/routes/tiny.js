@@ -228,14 +228,20 @@ const EMPTY_PHONE = { celular: '', telefone: '', fone: '', telefones: [] };
 // Normaliza array de telefones brutos para formato WhatsApp (dígitos + '55').
 // Entrada: ['(61) 98152-0717', '61 3200-1234', null, '']
 // Saída:   ['5561981520717', '556132001234']
+// Válido: DDD(2) + 8 dígitos (fixo) ou 9 dígitos (celular) = 10 ou 11 dígitos base.
 function normalizePhones(rawList) {
   const seen = new Set();
   const result = [];
   for (const raw of rawList) {
     if (!raw) continue;
     const digits = raw.replace(/\D/g, '');
-    if (digits.length < 8) continue;
-    const wa = (digits.startsWith('55') && digits.length >= 12) ? digits : '55' + digits;
+    if (!digits) continue;
+    // Remove prefixo "55" já existente antes de validar comprimento
+    const base = (digits.startsWith('55') && (digits.length === 12 || digits.length === 13))
+      ? digits.slice(2)
+      : digits;
+    if (base.length !== 10 && base.length !== 11) continue;
+    const wa = '55' + base;
     if (!seen.has(wa)) { seen.add(wa); result.push(wa); }
   }
   return result;
@@ -287,6 +293,47 @@ function loadingResponse(res, msg = 'Carregando dados do Tiny... Tente novamente
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
+
+// GET /api/tiny/semana — total de vendas desta semana por vendedor (para metas gamificadas)
+router.get('/semana', authenticateToken, async (req, res) => {
+  try {
+    const hoje = new Date();
+    const diaDaSemana = hoje.getDay();
+    const diffParaSeg = diaDaSemana === 0 ? -6 : 1 - diaDaSemana;
+    const seg = new Date(hoje);
+    seg.setDate(hoje.getDate() + diffParaSeg);
+    const dom = new Date(seg);
+    dom.setDate(seg.getDate() + 6);
+
+    const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    const inicioFmt = fmt(seg);
+    const fimFmt    = fmt(dom);
+
+    const cacheKey = `semana_${inicioFmt}`;
+    const cached   = cache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 5 * 60 * 1000)
+      return res.json({ ok: true, ...cached.data });
+
+    const todos = await fetchAllOrders({ dataInicial: inicioFmt, dataFinal: fimFmt }, 5);
+
+    const porVendedor = {};
+    for (const p of todos) {
+      const v = p.nome_vendedor || 'Sem vendedor';
+      porVendedor[v] = (porVendedor[v] || 0) + (parseFloat(p.valor) || 0);
+    }
+
+    const data = {
+      por_vendedor: porVendedor,
+      total: todos.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0),
+      qtd:   todos.length,
+    };
+
+    cache.set(cacheKey, { ts: Date.now(), data });
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
 
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
@@ -768,12 +815,10 @@ function classifyTemp(d) {
   return 'frio';
 }
 
-const TEMP_ORDER = { quente:0, morno:1, frio:2, congelado:3 };
-function sortByTemp(arr) {
-  return arr.sort((a,b) =>
-    (TEMP_ORDER[a.temperatura] - TEMP_ORDER[b.temperatura]) ||
-    ((a.dias_sem ?? 9999) - (b.dias_sem ?? 9999))
-  );
+// Ordena por recência: dias_sem crescente (comprou há 2 dias aparece antes de quem comprou há 45).
+// Clientes sem histórico (dias_sem null) vão para o final.
+function sortByRecency(arr) {
+  return arr.sort((a, b) => (a.dias_sem ?? 99999) - (b.dias_sem ?? 99999));
 }
 
 router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
@@ -827,7 +872,7 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
             // Cai no fallback do Tiny para não exibir tela vazia
             if (clientes.length === 0) throw new Error('supabase_sem_dados_periodo');
           }
-          clientes = sortByTemp(clientes);
+          clientes = sortByRecency(clientes);
           const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
           const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
           cache.set(KEY, { ts: Date.now(), data: sbResult });
@@ -891,7 +936,7 @@ async function _buildCrmTemp(periodo) {
     const base = contatoMap.todos || [];
     console.log(`[crm-geral] base de contatos: ${base.length} | histórico: ${histData.length}`);
 
-    const clientes = sortByTemp(base.map(c => {
+    const clientes = sortByRecency(base.map(c => {
       const cpf = (c.cpf_cnpj || '').replace(/\D/g, '');
       const nk  = normName(c.nome);
       const h   = histById[c.id]
@@ -974,7 +1019,7 @@ async function _buildCrmTemp(periodo) {
     if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
   }
 
-  const clientes = sortByTemp(Object.values(clienteMap).map(c => {
+  const clientes = sortByRecency(Object.values(clienteMap).map(c => {
     const diasSem = c.ultimo ? Math.round((hoje - c.ultimo) / 86400000) : null;
     let frequencia_dias = null;
     if (c.datas.length >= 2) {
@@ -1015,14 +1060,42 @@ async function _buildCrmTemp(periodo) {
   return { clientes, resumo, perfil, total: clientes.length, periodo };
 }
 
-// ── Sync CRM manual (admin) ────────────────────────────────────────────────────
-// Aciona o mesmo sync do cron sob demanda, sem esperar o horário das 3h.
-router.post('/sync-crm', authenticateToken, authorize('admin'), async (req, res) => {
+// ── Trigger sync completo via GitHub Actions (admin) ──────────────────────────
+// Dispara o workflow sync-crm.yml no GitHub — roda nos servidores deles (~20 min).
+// Requer GITHUB_PAT no .env com permissão actions:write no repo hub-donna.
+router.post('/trigger-sync-crm', authenticateToken, authorize('admin'), async (req, res) => {
+  const pat   = process.env.GITHUB_PAT;
+  const owner = 'elmuriloroberto-svg';
+  const repo  = 'hub-donna';
+
+  if (!pat) return res.status(500).json({ ok: false, msg: 'GITHUB_PAT não configurado no servidor.' });
+
   try {
-    const { syncCrmToSupabase } = require('../jobs/syncCrm');
-    res.json({ ok: true, msg: 'Sync iniciado em background. Acompanhe os logs do servidor.' });
-    // Roda após enviar a resposta para não bloquear o request
-    syncCrmToSupabase(_buildCrmTemp).catch(e => console.error('[sync-crm manual]', e.message));
+    const https = require('https');
+    const body  = JSON.stringify({ ref: 'main' });
+    await new Promise((resolve, reject) => {
+      const rq = https.request({
+        hostname: 'api.github.com',
+        path:     `/repos/${owner}/${repo}/actions/workflows/sync-crm.yml/dispatches`,
+        method:   'POST',
+        headers: {
+          'Authorization': `Bearer ${pat}`,
+          'Accept':        'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent':   'donna-hub',
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      }, r => {
+        let data = '';
+        r.on('data', c => data += c);
+        r.on('end', () => r.statusCode < 300 ? resolve() : reject(new Error(`GitHub API ${r.statusCode}: ${data}`)));
+      });
+      rq.on('error', reject);
+      rq.write(body);
+      rq.end();
+    });
+    res.json({ ok: true, msg: 'Sync iniciado no GitHub Actions. Dados atualizados em ~20 minutos.' });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
   }
