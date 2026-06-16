@@ -904,15 +904,16 @@ async function _buildCrmTemp(periodo) {
 
   if (periodo === 0) {
     // Geral: base = TODOS os contatos cadastrados no Tiny (não apenas quem comprou)
-    // Usa 2 anos de histórico para caber no limite de 60s do Vercel (vs 5 anos antes)
+    // Usa 10 anos para cobrir todo o histórico da loja.
+    // Na prática lê do Supabase (sync noturno), então não há risco de timeout no Vercel.
     let histData = null;
-    const histHit = swrGet('hist_2', CACHE_HIST);
+    const histHit = swrGet('hist_10', CACHE_HIST);
     if (histHit) {
       histData = histHit.data;
-      if (histHit.stale) swrBuild('hist_2', () => _buildHistoricoClientes(2));
+      if (histHit.stale) swrBuild('hist_10', () => _buildHistoricoClientes(10));
     } else {
-      histData = await _buildHistoricoClientes(2);
-      cache.set('hist_2', { ts: Date.now(), data: histData });
+      histData = await _buildHistoricoClientes(10);
+      cache.set('hist_10', { ts: Date.now(), data: histData });
     }
 
     const contatoMap = _contatosCache?.data || await _fetchContatos().then(d => {

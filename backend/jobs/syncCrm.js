@@ -132,7 +132,7 @@ async function fetchContactDetails(ids) {
 
 // ── Passo 3: histórico de pedidos (2 anos) ────────────────────────────────────
 async function fetchOrderHistory() {
-  const de = new Date(); de.setFullYear(de.getFullYear() - 2);
+  const de = new Date(); de.setFullYear(de.getFullYear() - 10);
   const clienteMap = {};
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   let pag = 1;
