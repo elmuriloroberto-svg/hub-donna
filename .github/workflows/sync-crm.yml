@@ -32,5 +32,5 @@ jobs:
           TINY_TOKEN: ${{ secrets.TINY_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: node ../run-sync-crm.js
-        working-directory: backend
+          NODE_PATH: backend/node_modules
+        run: node run-sync-crm.js

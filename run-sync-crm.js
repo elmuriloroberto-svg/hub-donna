@@ -1,4 +1,11 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+// No CI (GitHub Actions) as env vars já vêm do secrets — dotenv é só para rodar local
+try {
+  require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+} catch (_) {
+  try {
+    require('./backend/node_modules/dotenv').config({ path: require('path').join(__dirname, '.env') });
+  } catch (_) { /* CI: env vars já configuradas */ }
+}
 
 const { syncCrmFull } = require('./backend/jobs/syncCrm');
 
