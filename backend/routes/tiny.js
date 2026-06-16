@@ -833,66 +833,54 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
       return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
     }
 
-    // 2. Tenta Supabase para TODOS os períodos — retorno instantâneo
-    //    Para período > 0, filtra por dias_sem <= periodo após recalcular a partir de ultimo_pedido
-    try {
-      const supabase = getSupabase();
-      const { data: sbData, error: sbErr } = await supabase
-        .from('crm_clientes')
-        .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em');
-      if (!sbErr && sbData?.length > 0) {
-        const newest   = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
-        const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
-        if (ageHours < 25) {
-          const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-          let clientes = sbData.map(r => {
-            let diasSem = r.dias_sem;
-            if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
-              const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
-              if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
-            }
-            return {
-              nome:            r.nome,
-              celular:         r.celular  || '',
-              telefone:        r.telefone || '',
-              telefones:       r.telefones || [],
-              ultimo_pedido:   r.ultimo_pedido || '—',
-              dias_sem:        diasSem,
-              temperatura:     classifyTemp(diasSem),
-              qtd_pedidos:     r.qtd_pedidos,
-              ticket_medio:    parseFloat(r.ticket_medio),
-              frequencia_dias: r.frequencia_dias,
-              total:           parseFloat(r.total),
-            };
-          });
-          // Para período > 0: filtra quem comprou dentro do período
-          if (periodo > 0) {
-            clientes = clientes.filter(c => c.dias_sem !== null && c.dias_sem <= periodo && c.qtd_pedidos > 0);
-            // Se ficou vazio, Supabase ainda não tem dados financeiros (syncCrmFull pendente)
-            // Cai no fallback do Tiny para não exibir tela vazia
-            if (clientes.length === 0) throw new Error('supabase_sem_dados_periodo');
+    // 2. Período = 0 (Geral): usa Supabase — base completa de contatos + telefones do sync noturno.
+    //    Períodos > 0 vão direto ao Tiny: o Supabase não armazena histórico de pedidos confiável
+    //    (o syncCrmFull salva telefones, não série temporal de compras).
+    if (periodo === 0) {
+      try {
+        const supabase = getSupabase();
+        const { data: sbData, error: sbErr } = await supabase
+          .from('crm_clientes')
+          .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em');
+        if (!sbErr && sbData?.length > 0) {
+          const newest   = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
+          const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
+          if (ageHours < 25) {
+            const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+            const clientes = sortByRecency(sbData.map(r => {
+              let diasSem = r.dias_sem;
+              if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
+                const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
+                if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
+              }
+              return {
+                nome:            r.nome,
+                celular:         r.celular  || '',
+                telefone:        r.telefone || '',
+                telefones:       r.telefones || [],
+                ultimo_pedido:   r.ultimo_pedido || '—',
+                dias_sem:        diasSem,
+                temperatura:     classifyTemp(diasSem),
+                qtd_pedidos:     r.qtd_pedidos,
+                ticket_medio:    parseFloat(r.ticket_medio) || 0,
+                frequencia_dias: r.frequencia_dias,
+                total:           parseFloat(r.total) || 0,
+              };
+            }));
+            const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
+            const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
+            cache.set(KEY, { ts: Date.now(), data: sbResult });
+            return res.json({ ok: true, stale: false, source: 'supabase', ...sbResult });
           }
-          clientes = sortByRecency(clientes);
-          const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
-          const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
-          cache.set(KEY, { ts: Date.now(), data: sbResult });
-          return res.json({ ok: true, stale: false, source: 'supabase', ...sbResult });
         }
+      } catch (sbErr) {
+        console.warn('[crm-temp] Supabase Geral indisponível:', sbErr.message);
       }
-    } catch (sbErr) {
-      console.warn('[crm-temp] Supabase indisponível:', sbErr.message);
     }
 
-    // 3. Fallback: build síncrono via Tiny API (quando Supabase está vazio ou stale)
+    // 3. Build via Tiny API — único caminho para períodos > 0 e fallback do Geral
     const data = await _buildCrmTemp(periodo);
     cache.set(KEY, { ts: Date.now(), data });
-
-    if (periodo === 0) {
-      const { syncCrmToSupabase } = require('../jobs/syncCrm');
-      syncCrmToSupabase(() => Promise.resolve(data))
-        .catch(e => console.warn('[crm-temp] supabase persist falhou:', e.message));
-    }
-
     return res.json({ ok: true, stale: false, ...data });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
