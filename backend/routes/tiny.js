@@ -834,18 +834,29 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
     }
 
     // 2. Período = 0 (Geral): usa Supabase — base completa de contatos + telefones do sync noturno.
-    //    Períodos > 0 vão direto ao Tiny: o Supabase não armazena histórico de pedidos confiável
-    //    (o syncCrmFull salva telefones, não série temporal de compras).
+    //    Períodos > 0 vão direto ao Tiny: o Supabase não armazena histórico de pedidos confiável.
     if (periodo === 0) {
       try {
         const supabase = getSupabase();
-        const { data: sbData, error: sbErr } = await supabase
-          .from('crm_clientes')
-          .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em');
-        if (!sbErr && sbData?.length > 0) {
+
+        // Supabase limita a 1000 linhas por request — pagina até buscar tudo.
+        let sbData = [];
+        const PAGE = 1000;
+        for (let from = 0; ; from += PAGE) {
+          const { data: chunk, error: chunkErr } = await supabase
+            .from('crm_clientes')
+            .select('nome,celular,telefone,telefones,ultimo_pedido,dias_sem,temperatura,qtd_pedidos,ticket_medio,frequencia_dias,total,atualizado_em')
+            .range(from, from + PAGE - 1);
+          if (chunkErr || !chunk?.length) break;
+          sbData.push(...chunk);
+          if (chunk.length < PAGE) break;
+        }
+
+        if (sbData.length > 0) {
           const newest   = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
           const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
-          if (ageHours < 25) {
+          // 30h de tolerância: sync noturno roda às 23h, mas pode chegar até 01h do dia seguinte.
+          if (ageHours < 30) {
             const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
             const clientes = sortByRecency(sbData.map(r => {
               let diasSem = r.dias_sem;
@@ -870,15 +881,36 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
             const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
             const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
             cache.set(KEY, { ts: Date.now(), data: sbResult });
+            console.log(`[crm-geral] Supabase: ${clientes.length} clientes (${Math.round(ageHours)}h atrás)`);
             return res.json({ ok: true, stale: false, source: 'supabase', ...sbResult });
           }
+          console.warn(`[crm-geral] Supabase desatualizado (${Math.round(ageHours)}h) — aguarde sync noturno.`);
         }
+
+        // Supabase vazio ou desatualizado: o _buildCrmTemp(0) busca 10 anos do Tiny e
+        // ultrapassa o timeout do Vercel. Retorna loading — próximo sync noturno resolverá.
+        if (sbData.length === 0) {
+          return res.status(202).json({ ok: false, loading: true, msg: 'Dados do CRM ainda não sincronizados. O sync noturno roda às 23h e leva ~20 min. Use o botão "Sync Completo" para forçar.' });
+        }
+        // Dados existem mas estão velhos: retorna stale com aviso
+        const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+        const clientes = sortByRecency(sbData.map(r => {
+          let diasSem = r.dias_sem;
+          if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
+            const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
+            if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
+          }
+          return { nome: r.nome, celular: r.celular || '', telefone: r.telefone || '', telefones: r.telefones || [], ultimo_pedido: r.ultimo_pedido || '—', dias_sem: diasSem, temperatura: classifyTemp(diasSem), qtd_pedidos: r.qtd_pedidos, ticket_medio: parseFloat(r.ticket_medio) || 0, frequencia_dias: r.frequencia_dias, total: parseFloat(r.total) || 0 };
+        }));
+        const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
+        return res.json({ ok: true, stale: true, source: 'supabase_stale', clientes, resumo, perfil, total: clientes.length, periodo });
       } catch (sbErr) {
         console.warn('[crm-temp] Supabase Geral indisponível:', sbErr.message);
+        return res.status(503).json({ ok: false, loading: true, msg: 'Supabase indisponível. Tente novamente.' });
       }
     }
 
-    // 3. Build via Tiny API — único caminho para períodos > 0 e fallback do Geral
+    // 3. Build via Tiny API — único caminho para períodos > 0
     const data = await _buildCrmTemp(periodo);
     cache.set(KEY, { ts: Date.now(), data });
     return res.json({ ok: true, stale: false, ...data });
