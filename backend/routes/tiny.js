@@ -84,6 +84,23 @@ async function fetchAllOrders(params, maxPags = 9999) {
   return todos;
 }
 
+// Variante reversa: busca da última página para a primeira.
+// Tiny ordena do mais antigo ao mais novo — se rate-limitado no meio,
+// a versão reversa preserva os pedidos RECENTES em vez dos mais antigos.
+async function fetchAllOrdersReverse(params, maxPags = 9999) {
+  const first = await _fetchOrdersPage(params, 1);
+  if (!first) return [];
+  const totalPags = Math.min(parseInt(first.retorno.numero_paginas) || 1, maxPags);
+  const todos = (first.retorno.pedidos || []).map(p => p.pedido); // página 1 já incluída
+  for (let pag = totalPags; pag >= 2; pag--) {
+    await sleep(300);
+    const r = await _fetchOrdersPage(params, pag);
+    if (!r) break;
+    todos.push(...(r.retorno.pedidos || []).map(p => p.pedido));
+  }
+  return todos;
+}
+
 // ── Contatos ─────────────────────────────────────────────────────────────────
 // Varredura agressiva: coleta todos os valores de telefone possíveis e ordena
 // por número de dígitos (mais dígitos = mais completo = provável celular).
@@ -715,7 +732,7 @@ router.get('/historico-clientes', authenticateToken, authorize('admin', 'gerente
 
 async function _buildHistoricoClientes(anos) {
   const de = new Date(); de.setFullYear(de.getFullYear() - anos);
-  const todos = await fetchAllOrders({ dataInicial: formatDateBR(de) });
+  const todos = await fetchAllOrdersReverse({ dataInicial: formatDateBR(de) });
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   const clienteMap = {};
   for (const p of todos) {
@@ -790,11 +807,13 @@ function buildCrmResumoEPerfil(clientes) {
   const resumo = { quente: 0, morno: 0, frio: 0, congelado: 0 };
   clientes.forEach(c => resumo[c.temperatura]++);
   const ativos    = clientes.filter(c => c.dias_sem !== null);
-  const comFreq   = ativos.filter(c => c.freq_dias !== null);
+  const comFreq   = ativos.filter(c => c.frequencia_dias !== null);
   const tkGeral   = ativos.length ? ativos.reduce((s,c) => s+c.ticket_medio, 0) / ativos.length : 0;
-  const freqGeral = comFreq.length ? Math.round(comFreq.reduce((s,c) => s+c.freq_dias, 0) / comFreq.length) : null;
+  const freqGeral = comFreq.length ? Math.round(comFreq.reduce((s,c) => s+c.frequencia_dias, 0) / comFreq.length) : null;
   const comWA     = clientes.filter(c => c.celular || c.telefone).length;
-  const top       = [...ativos].sort((a,b) => b.total - a.total)[0] || null;
+  // Top cliente: maior total gasto — inclui todos com total > 0, não só ativos recentes
+  const comTotal  = clientes.filter(c => (c.total || 0) > 0);
+  const top       = comTotal.length > 0 ? [...comTotal].sort((a,b) => b.total - a.total)[0] : null;
   return {
     resumo,
     perfil: {
@@ -857,10 +876,21 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
           const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
 
           // Verifica qualidade do histórico de pedidos no Supabase.
-          // Se o sync foi rate-limitado após fetchContactDetails, dias_sem fica null para
-          // quase todos os contatos. Detectamos isso e usamos o path híbrido (Tiny) nesse caso.
-          const comHistoricoRecente = sbData.filter(r => r.dias_sem !== null && r.dias_sem <= 365).length;
-          const dataQualityOk = comHistoricoRecente / sbData.length > 0.05; // ≥5% com histórico recente
+          // Usa ultimo_pedido para recalcular dias_sem dinâmicamente — o campo armazenado
+          // reflete o momento do sync e fica defasado. Se o pedido mais recente no Supabase
+          // tem >60 dias, o histórico está desatualizado e usamos o path híbrido (Tiny).
+          const hoje0 = new Date(); hoje0.setHours(0, 0, 0, 0);
+          const diasSemDinamico = sbData
+            .filter(r => r.ultimo_pedido && r.ultimo_pedido !== '—')
+            .map(r => {
+              const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
+              return (dt && !isNaN(dt)) ? Math.round((hoje0 - dt) / 86400000) : null;
+            })
+            .filter(d => d !== null);
+          const comHistoricoRecente = diasSemDinamico.filter(d => d <= 365).length;
+          const minDiasSem = diasSemDinamico.length > 0 ? Math.min(...diasSemDinamico) : 9999;
+          // Exige: ≥5% com pedido no último ano E pelo menos 1 cliente comprou nos últimos 60 dias
+          const dataQualityOk = comHistoricoRecente / sbData.length > 0.05 && minDiasSem < 60;
 
           if (ageHours < 30 && dataQualityOk) {
             // Fast path: Supabase tem dados frescos E histórico de pedidos válido
@@ -1055,7 +1085,7 @@ async function _buildCrmTemp(periodo) {
   // Também tenta carregar mapa de telefones do Supabase — que tem celular real
   // de contato.obter.php (syncCrmFull), algo que contatos.pesquisa.php não retorna.
   const [orders, contatoMap, sbPhoneMap] = await Promise.all([
-    fetchAllOrders(params),
+    fetchAllOrdersReverse(params),
     _contatosCache
       ? Promise.resolve(_contatosCache.data)
       : _fetchContatos().then(d => { _contatosCache = { ts: Date.now(), data: d }; return d; }),

@@ -135,15 +135,9 @@ async function fetchOrderHistory() {
   const de = new Date(); de.setFullYear(de.getFullYear() - 10);
   const clienteMap = {};
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  let pag = 1;
-  while (true) {
-    let r = null;
-    for (let t = 1; t <= 3; t++) {
-      try { r = await tinyGet('pedidos.pesquisa.php', { dataInicial: formatDateBR(de), pagina: pag }); break; }
-      catch { await sleep(500 * t); }
-    }
-    if (!r?.retorno?.pedidos?.length) break;
-    for (const item of r.retorno.pedidos) {
+
+  function processar(pedidos) {
+    for (const item of pedidos) {
       const p    = item.pedido || item;
       const nome = (p.nome || '').trim();
       if (!nome || nome.toLowerCase() === 'consumidor final' || nome.toLowerCase() === 'cliente padrão') continue;
@@ -162,9 +156,29 @@ async function fetchOrderHistory() {
       }
       if (!clienteMap[nome].cpf_cnpj && p.cpf_cnpj) clienteMap[nome].cpf_cnpj = p.cpf_cnpj;
     }
-    const totalPags = parseInt(r.retorno.numero_paginas) || 1;
-    if (pag >= totalPags) break;
-    pag++;
+  }
+
+  // Página 1 primeiro para descobrir o total de páginas
+  let firstR = null;
+  for (let t = 1; t <= 3; t++) {
+    try { firstR = await tinyGet('pedidos.pesquisa.php', { dataInicial: formatDateBR(de), pagina: 1 }); break; }
+    catch { await sleep(500 * t); }
+  }
+  if (!firstR?.retorno?.pedidos?.length) return [];
+  processar(firstR.retorno.pedidos);
+
+  const totalPags = parseInt(firstR.retorno.numero_paginas) || 1;
+
+  // Busca da última página para a segunda — Tiny ordena do mais antigo ao mais novo.
+  // Em caso de rate-limit, preserva os pedidos recentes em vez dos históricos.
+  for (let pag = totalPags; pag >= 2; pag--) {
+    let r = null;
+    for (let t = 1; t <= 3; t++) {
+      try { r = await tinyGet('pedidos.pesquisa.php', { dataInicial: formatDateBR(de), pagina: pag }); break; }
+      catch { await sleep(500 * t); }
+    }
+    if (!r?.retorno?.pedidos?.length) break;
+    processar(r.retorno.pedidos);
     await sleep(SLEEP_MS);
   }
   // Converte para array com metadados calculados
