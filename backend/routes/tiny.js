@@ -311,6 +311,40 @@ function loadingResponse(res, msg = 'Carregando dados do Tiny... Tente novamente
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 
+// GET /api/tiny/melhor-mes — melhor mês histórico (últimos 2 anos) + média mensal (admin)
+// Cache 24h. Primeira chamada leva ~15-25s; as seguintes são instantâneas.
+const CACHE_MELHOR_MES = 24 * 3600 * 1000;
+
+async function _buildMelhorMes() {
+  const de = new Date(); de.setFullYear(de.getFullYear() - 2);
+  const todos = await fetchAllOrders({ dataInicial: formatDateBR(de) }); // ordem cronológica: todos os meses
+  const porMes = {};
+  for (const p of todos) {
+    const dt = parseDateBR(p.data_pedido);
+    if (!dt || isNaN(dt)) continue;
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    porMes[key] = (porMes[key] || 0) + (parseFloat(p.valor) || 0);
+  }
+  const meses = Object.entries(porMes)
+    .map(([mes, total]) => ({ mes, total: Math.round(total * 100) / 100 }))
+    .sort((a, b) => a.mes.localeCompare(b.mes));
+  if (!meses.length) return { melhor: null, media: 0, total_meses: 0 };
+  const melhor = [...meses].sort((a, b) => b.total - a.total)[0];
+  const media  = Math.round(meses.reduce((s, c) => s + c.total, 0) / meses.length * 100) / 100;
+  return { melhor, media, total_meses: meses.length };
+}
+
+router.get('/melhor-mes', authenticateToken, authorize('admin'), async (req, res) => {
+  const KEY = 'melhor_mes';
+  const hit = swrGet(KEY, CACHE_MELHOR_MES);
+  if (hit) {
+    if (hit.stale) swrBuild(KEY, _buildMelhorMes);
+    return res.json({ ok: true, stale: hit.stale || false, ...hit.data });
+  }
+  swrBuild(KEY, _buildMelhorMes); // background — Vercel não mata se resposta já foi enviada
+  return loadingResponse(res, 'Calculando histórico de vendas… aguarde ~20s e recarregue.');
+});
+
 // GET /api/tiny/semana — total de vendas desta semana por vendedor (para metas gamificadas)
 router.get('/semana', authenticateToken, async (req, res) => {
   try {
