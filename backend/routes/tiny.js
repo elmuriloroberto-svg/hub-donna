@@ -899,8 +899,28 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
             if (histHit.stale) swrBuild('hist_10', () => _buildHistoricoClientes(10));
           } else {
             histData = await _buildHistoricoClientes(2); // 2 anos: ~15s, seguro no Vercel
-            cache.set('hist_2', { ts: Date.now(), data: histData });
-            swrBuild('hist_10', () => _buildHistoricoClientes(10)); // atualiza para 10a em background
+            // Só cacheia se Tiny retornou dados — evita fixar cache vazio em janela de rate-limit
+            if (histData.length > 0) {
+              cache.set('hist_2', { ts: Date.now(), data: histData });
+              swrBuild('hist_10', () => _buildHistoricoClientes(10));
+            }
+          }
+
+          // Se Tiny ainda está rate-limitado: exibe Supabase como está (dados desatualizados mas visíveis)
+          if (!histData || histData.length === 0) {
+            console.warn(`[crm-geral] Tiny rate-limitado — exibindo Supabase sem enriquecimento`);
+            const clientesSb = sortByRecency(sbData.map(r => ({
+              nome: r.nome, celular: r.celular || '', telefone: r.telefone || '',
+              telefones: r.telefones || [], ultimo_pedido: r.ultimo_pedido || '—',
+              dias_sem: (typeof r.dias_sem === 'number') ? r.dias_sem : null,
+              temperatura: classifyTemp((typeof r.dias_sem === 'number') ? r.dias_sem : null),
+              qtd_pedidos: r.qtd_pedidos || 0,
+              ticket_medio: parseFloat(r.ticket_medio) || 0,
+              frequencia_dias: r.frequencia_dias ?? null,
+              total: parseFloat(r.total) || 0,
+            })));
+            const { resumo: rSb, perfil: pSb } = buildCrmResumoEPerfil(clientesSb);
+            return res.json({ ok: true, stale: true, source: 'supabase_only', clientes: clientesSb, resumo: rSb, perfil: pSb, total: clientesSb.length, periodo });
           }
 
           // Indexa histórico por nome normalizado
@@ -941,8 +961,17 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
 
     // 3. Build via Tiny API — único caminho para períodos > 0
     const data = await _buildCrmTemp(periodo);
-    cache.set(KEY, { ts: Date.now(), data });
-    return res.json({ ok: true, stale: false, ...data });
+    if (data.clientes?.length > 0) {
+      cache.set(KEY, { ts: Date.now(), data });
+      return res.json({ ok: true, stale: false, ...data });
+    }
+    // Tiny retornou 0 clientes (rate-limited) — não cacheia; serve stale se disponível
+    const staleEntry = cache.get(KEY);
+    if (staleEntry) {
+      console.warn(`[crm-temp] ${KEY} retornou 0 clientes — servindo cache stale`);
+      return res.json({ ok: true, stale: true, ...staleEntry.data });
+    }
+    return res.json({ ok: false, loading: true, msg: 'Tiny não retornou dados agora. Tente novamente em alguns minutos.' });
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
   }
