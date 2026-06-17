@@ -130,64 +130,103 @@ router.post('/mensal', authenticateToken, authorize('admin'), async (req, res) =
   }
 });
 
-// GET all metas (com nome do colaborador)
+// GET /api/metas — all individual metas with joined colaborador_nome
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const sb = getSupabase();
     const [metaRes, userRes] = await Promise.all([
       sb.from('metas').select('*').order('mes', { ascending: false }),
-      sb.from('rubi_users').select('id, nome'),
+      sb.from('rubi_users').select('id, nome, login'),
     ]);
     if (metaRes.error) throw new Error(metaRes.error.message);
 
-    const userMap = Object.fromEntries((userRes.data || []).map((u) => [u.id, u.nome]));
+    const userMap = Object.fromEntries((userRes.data || []).map((u) => [u.id, u]));
     const data = (metaRes.data || []).map((m) => ({
       ...m,
-      colaborador_nome: userMap[m.colaborador_id] || '',
+      colaborador_nome:  userMap[m.colaborador_id]?.nome  || m.collab_login || '',
+      colaborador_login: userMap[m.colaborador_id]?.login || m.collab_login || '',
     }));
     res.json({ ok: true, data });
   } catch (err) {
-    console.error(err);
+    console.error('[metas GET]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar metas' });
   }
 });
 
-// CREATE meta
-router.post('/', authenticateToken, async (req, res) => {
+// POST /api/metas — admin/gerente only; accepts collab_login OR colaborador_id
+router.post('/', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
-    const { colaborador_id, mes, meta_valor, realizado } = req.body;
-    if (!colaborador_id || !mes || !meta_valor)
-      return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
+    const { colaborador_id, collab_login, mes, meta_valor, realizado } = req.body;
+    if (!mes || meta_valor == null)
+      return res.status(400).json({ ok: false, msg: 'Campos obrigatórios: mes, meta_valor' });
 
     const sb = getSupabase();
+    let collabId = colaborador_id;
+    let login    = collab_login || '';
+
+    if (!collabId && collab_login) {
+      const { data: u } = await sb
+        .from('rubi_users').select('id, login').eq('login', collab_login).maybeSingle();
+      if (!u) return res.status(400).json({ ok: false, msg: `Colaborador "${collab_login}" não encontrado` });
+      collabId = u.id;
+      login    = u.login;
+    }
+    if (!collabId) return res.status(400).json({ ok: false, msg: 'Colaborador obrigatório' });
+
     const { error } = await sb.from('metas').insert({
-      colaborador_id, mes,
-      meta_valor, realizado: realizado || 0,
+      colaborador_id: collabId,
+      collab_login:   login,
+      mes,
+      meta_valor:  parseFloat(meta_valor) || 0,
+      realizado:   parseFloat(realizado)  || 0,
+      criado_por:  req.user.nome || req.user.login || '',
+      criado_em:   new Date().toISOString(),
     });
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Meta criada' });
   } catch (err) {
-    console.error(err);
+    console.error('[metas POST]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao criar meta' });
   }
 });
 
-// UPDATE meta
-router.put('/:id', authenticateToken, async (req, res) => {
+// PUT /api/metas/:id — admin/gerente only; records audit who+when
+router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
     const { meta_valor, realizado } = req.body;
+    const update = { atualizado_por: req.user.nome || req.user.login || '', atualizado_em: new Date().toISOString() };
+    if (meta_valor != null) update.meta_valor = parseFloat(meta_valor) || 0;
+    if (realizado  != null) update.realizado  = parseFloat(realizado)  || 0;
+
     const sb = getSupabase();
-    const { error } = await sb.from('metas').update({ meta_valor, realizado }).eq('id', id);
+    const { error } = await sb.from('metas').update(update).eq('id', id);
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Meta atualizada' });
   } catch (err) {
-    console.error(err);
+    console.error('[metas PUT]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao atualizar meta' });
+  }
+});
+
+// DELETE /api/metas/:id — admin/gerente only
+router.delete('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+
+    const sb = getSupabase();
+    const { error } = await sb.from('metas').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+
+    res.json({ ok: true, msg: 'Meta removida' });
+  } catch (err) {
+    console.error('[metas DELETE]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao remover meta' });
   }
 });
 
