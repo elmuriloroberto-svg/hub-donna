@@ -3,25 +3,39 @@ const { getSupabase }       = require('../lib/supabase');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
-const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const isUUID = v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
-// GET boletos pagar
+function nextMonth(mes) {
+  const [y, m] = mes.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+// GET /api/boletos/pagar?mes=YYYY-MM
 router.get('/pagar', authenticateToken, async (req, res) => {
   try {
+    const { mes } = req.query;
     const sb = getSupabase();
-    const { data, error } = await sb
+    let query = sb
       .from('boletos_pagar')
-      .select('id, fornecedor, valor, vencimento, status, obs')
-      .order('vencimento', { ascending: false });
+      .select('id, fornecedor, valor, vencimento, status, obs, categoria, grupo_id, parcela_num, parcela_tot')
+      .order('vencimento', { ascending: true });
+
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      query = query
+        .gte('vencimento', mes + '-01')
+        .lt('vencimento', nextMonth(mes) + '-01');
+    }
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     res.json({ ok: true, data: data || [] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, msg: 'Erro ao buscar boletos' });
+    console.error('[boletos/pagar]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao buscar contas a pagar' });
   }
 });
 
-// GET boletos receber
+// GET /api/boletos/receber
 router.get('/receber', authenticateToken, async (req, res) => {
   try {
     const sb = getSupabase();
@@ -30,74 +44,95 @@ router.get('/receber', authenticateToken, async (req, res) => {
       sb.from('clientes').select('id, nome'),
     ]);
     if (brRes.error) throw new Error(brRes.error.message);
-
-    const cliMap = Object.fromEntries((cliRes.data || []).map((c) => [c.id, c.nome]));
-    const data = (brRes.data || []).map((r) => ({ ...r, cliente: cliMap[r.cliente_id] || '' }));
+    const cliMap = Object.fromEntries((cliRes.data || []).map(c => [c.id, c.nome]));
+    const data = (brRes.data || []).map(r => ({ ...r, cliente: cliMap[r.cliente_id] || '' }));
     res.json({ ok: true, data });
   } catch (err) {
-    console.error(err);
+    console.error('[boletos/receber]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar recebíveis' });
   }
 });
 
-// CREATE boleto pagar
-router.post('/pagar', authenticateToken, async (req, res) => {
+// DELETE /api/boletos/pagar/grupo/:grupo_id — remove todas as parcelas do grupo
+// IMPORTANT: must be declared before /pagar/:id to avoid route conflict
+router.delete('/pagar/grupo/:grupo_id', authenticateToken, async (req, res) => {
   try {
-    const { fornecedor, valor, vencimento, status, obs } = req.body;
-    if (!fornecedor || !valor || !vencimento)
-      return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
-
+    const { grupo_id } = req.params;
+    if (!isUUID(grupo_id)) return res.status(400).json({ ok: false, msg: 'grupo_id inválido' });
     const sb = getSupabase();
-    const { error } = await sb.from('boletos_pagar').insert({
-      fornecedor, valor, vencimento,
-      status: status || 'pendente',
-      obs: obs || '',
-      created_by: req.user.id,
-    });
+    const { error } = await sb.from('boletos_pagar').delete().eq('grupo_id', grupo_id);
     if (error) throw new Error(error.message);
-
-    res.json({ ok: true, msg: 'Boleto criado' });
+    res.json({ ok: true, msg: 'Conta removida' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, msg: 'Erro ao criar boleto' });
+    console.error('[boletos/pagar/grupo]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao remover conta' });
   }
 });
 
-// UPDATE boleto pagar
+// POST /api/boletos/pagar — cria conta(s); aceita objeto único ou array de parcelas
+router.post('/pagar', authenticateToken, async (req, res) => {
+  try {
+    const payload = Array.isArray(req.body) ? req.body : [req.body];
+    const rows = payload.map(item => {
+      const { fornecedor, valor, vencimento, status, obs, categoria, grupo_id, parcela_num, parcela_tot } = item;
+      if (!fornecedor || valor == null || !vencimento)
+        throw Object.assign(new Error('Campos obrigatórios: fornecedor, valor, vencimento'), { status: 400 });
+      return {
+        fornecedor:  String(fornecedor).trim(),
+        valor:       parseFloat(valor),
+        vencimento,
+        status:      status || 'pendente',
+        obs:         obs || '',
+        categoria:   categoria || 'Geral',
+        grupo_id:    grupo_id || undefined,
+        parcela_num: parcela_num || 1,
+        parcela_tot: parcela_tot || 1,
+        created_by:  req.user.id,
+      };
+    });
+
+    const sb = getSupabase();
+    const { error } = await sb.from('boletos_pagar').insert(rows);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, msg: `${rows.length} conta(s) criada(s)` });
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ ok: false, msg: err.message });
+    console.error('[boletos/pagar POST]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao criar conta' });
+  }
+});
+
+// PUT /api/boletos/pagar/:id — atualiza conta individual (status, campos)
 router.put('/pagar/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
-
-    const { fornecedor, valor, vencimento, status, obs } = req.body;
+    const { fornecedor, valor, vencimento, status, obs, categoria } = req.body;
     const sb = getSupabase();
     const { error } = await sb
       .from('boletos_pagar')
-      .update({ fornecedor, valor, vencimento, status, obs })
+      .update({ fornecedor, valor, vencimento, status, obs, categoria })
       .eq('id', id);
     if (error) throw new Error(error.message);
-
-    res.json({ ok: true, msg: 'Boleto atualizado' });
+    res.json({ ok: true, msg: 'Conta atualizada' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, msg: 'Erro ao atualizar boleto' });
+    console.error('[boletos/pagar PUT]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao atualizar conta' });
   }
 });
 
-// DELETE boleto pagar
+// DELETE /api/boletos/pagar/:id — remove parcela individual
 router.delete('/pagar/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
-
     const sb = getSupabase();
     const { error } = await sb.from('boletos_pagar').delete().eq('id', id);
     if (error) throw new Error(error.message);
-
-    res.json({ ok: true, msg: 'Boleto removido' });
+    res.json({ ok: true, msg: 'Conta removida' });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, msg: 'Erro ao remover boleto' });
+    console.error('[boletos/pagar DELETE]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao remover conta' });
   }
 });
 
