@@ -46,15 +46,20 @@ router.get('/resumo/uber', authenticateToken, async (req, res) => {
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { data: dataEntrega, cliente_id, descricao, valor_cobrado, valor_uber, obs } = req.body;
-    if (!dataEntrega || !valor_cobrado || !valor_uber)
+    if (!dataEntrega || valor_cobrado == null || valor_uber == null)
       return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
+
+    const cobrado = parseFloat(valor_cobrado);
+    const custo   = parseFloat(valor_uber);
+    if (isNaN(cobrado) || isNaN(custo) || cobrado < 0 || custo < 0)
+      return res.status(400).json({ ok: false, msg: 'Valores inválidos' });
 
     const sb = getSupabase();
     const { error } = await sb.from('entregas').insert({
       data: dataEntrega,
       cliente_id: cliente_id || null,
       descricao: descricao || '',
-      valor_cobrado, valor_uber,
+      valor_cobrado: cobrado, valor_uber: custo,
       status: 'realizada',
       obs: obs || '',
     });

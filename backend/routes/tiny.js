@@ -1172,7 +1172,15 @@ async function _buildCrmTemp(periodo) {
 // ── Trigger sync completo via GitHub Actions (admin) ──────────────────────────
 // Dispara o workflow sync-crm.yml no GitHub — roda nos servidores deles (~20 min).
 // Requer GITHUB_PAT no .env com permissão actions:write no repo hub-donna.
+let _lastSyncDispatch = 0;
 router.post('/trigger-sync-crm', authenticateToken, authorize('admin'), async (req, res) => {
+  const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos entre disparos
+  const agora = Date.now();
+  if (agora - _lastSyncDispatch < SYNC_COOLDOWN_MS) {
+    const restante = Math.ceil((SYNC_COOLDOWN_MS - (agora - _lastSyncDispatch)) / 60000);
+    return res.status(429).json({ ok: false, msg: `Sync já acionado recentemente. Aguarde ${restante} min.` });
+  }
+  _lastSyncDispatch = agora;
   const pat   = process.env.GITHUB_PAT;
   const owner = 'elmuriloroberto-svg';
   const repo  = 'hub-donna';
