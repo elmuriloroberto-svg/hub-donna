@@ -1,13 +1,12 @@
-const express    = require('express');
-const Anthropic  = require('@anthropic-ai/sdk');
+const express = require('express');
+const Groq    = require('groq-sdk');
 const { getSupabase }          = require('../lib/supabase');
 const { authenticateToken }    = require('../middleware/auth');
 const { sanitizeStr }          = require('../middleware/security');
 
 const router = express.Router();
 
-const SYSTEM_RULES = `
-Você é a Donna IA, assistente virtual da Donna Unha — distribuidora de cosméticos para unhas em Brasília.
+const SYSTEM_RULES = `Você é a Donna IA, assistente virtual da Donna Unha — distribuidora de cosméticos para unhas em Brasília.
 
 REGRAS DO NEGÓCIO:
 - Linha Impala: Esmaltes Básicos (8ml, 200+ cores, custo R$4-8), Premium (10ml, R$8-15), Base Coat e Top Coat (R$6-10). Fórmula livre de tolueno.
@@ -20,27 +19,26 @@ REGRAS DO NEGÓCIO:
 Responda em português, de forma direta e útil. Seja simpática mas profissional.
 Use os Processos abaixo como fonte principal de informação.
 Se não souber, diga que não tem essa informação e sugira consultar o gerente.
-Nunca invente preços ou políticas que não estejam documentados.
-`.trim();
+Nunca invente preços ou políticas que não estejam documentados.`;
 
 // POST /api/chat
 router.post('/', authenticateToken, async (req, res) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return res.status(503).json({ ok: false, msg: 'Donna IA não configurada. Adicione ANTHROPIC_API_KEY no .env.' });
+    return res.status(503).json({ ok: false, msg: 'Donna IA não configurada (sem GROQ_API_KEY).' });
   }
 
   try {
     const message = sanitizeStr(req.body.message, 500);
     if (!message) return res.status(400).json({ ok: false, msg: 'Mensagem vazia' });
 
-    // Last 4 turns of history (8 messages)
+    // Últimas 4 trocas (8 mensagens)
     const rawHistory = Array.isArray(req.body.history) ? req.body.history.slice(-8) : [];
     const history = rawHistory
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role, content: sanitizeStr(String(m.content), 800) }));
 
-    // RAG: fetch all processos to build context
+    // RAG: busca processos da Wiki como contexto
     const sb = getSupabase();
     const { data: processos } = await sb
       .from('processos')
@@ -56,15 +54,18 @@ router.post('/', authenticateToken, async (req, res) => {
           .join('\n\n---\n\n');
     }
 
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      model:      'llama-3.1-8b-instant',
       max_tokens: 600,
-      system:     SYSTEM_RULES + processosCtx,
-      messages:   [...history, { role: 'user', content: message }],
+      messages: [
+        { role: 'system', content: SYSTEM_RULES + processosCtx },
+        ...history,
+        { role: 'user', content: message },
+      ],
     });
 
-    const reply = response.content?.[0]?.text || 'Não consegui gerar uma resposta.';
+    const reply = completion.choices[0]?.message?.content || 'Não consegui gerar uma resposta.';
     res.json({ ok: true, reply });
   } catch (err) {
     console.error('[chat POST]', err.message);
