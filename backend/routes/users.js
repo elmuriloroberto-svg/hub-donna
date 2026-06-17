@@ -14,10 +14,9 @@ router.get('/', authenticateToken, authorize('admin', 'gerente'), async (req, re
     const sb = getSupabase();
     const { data, error } = await sb
       .from('rubi_users')
-      .select('id, username, nome, role, ativo, created_at')
+      .select('id, username, nome, role, ativo, created_at, tiny_vendor, permissoes')
       .order('nome');
     if (error) throw new Error(error.message);
-    // expose as "login" para compatibilidade com o frontend
     const users = (data || []).map((u) => ({ ...u, login: u.username }));
     res.json({ ok: true, data: users });
   } catch (err) {
@@ -47,7 +46,8 @@ router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
       return res.status(400).json({ ok: false, msg: 'Login já existe' });
 
     const password_hash = await bcrypt.hash(senha, 10);
-    const { error } = await sb.from('rubi_users').insert({ username: login, password_hash, nome, role });
+    const tiny_vendor = sanitizeStr(req.body.tiny_vendor, 150) || '';
+    const { error } = await sb.from('rubi_users').insert({ username: login, password_hash, nome, role, tiny_vendor });
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Usuário criado com sucesso' });
@@ -63,15 +63,28 @@ router.put('/:id', authenticateToken, authorize('admin'), async (req, res) => {
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    const nome  = sanitizeStr(req.body.nome, 150);
-    const role  = sanitizeStr(req.body.role, 50);
-    const ativo = !!req.body.ativo;
+    const nome        = sanitizeStr(req.body.nome, 150);
+    const role        = sanitizeStr(req.body.role, 50);
+    const tiny_vendor = sanitizeStr(req.body.tiny_vendor, 150) || '';
+    const ativo       = !!req.body.ativo;
+    const permissoes  = req.body.permissoes || {};
 
     if (!nome || !role) return res.status(400).json({ ok: false, msg: 'Nome e role são obrigatórios' });
     if (!VALID_ROLES.includes(role)) return res.status(400).json({ ok: false, msg: 'Role inválido' });
+    if (typeof permissoes !== 'object' || Array.isArray(permissoes))
+      return res.status(400).json({ ok: false, msg: 'permissoes deve ser um objeto' });
 
     const sb = getSupabase();
-    const { error } = await sb.from('rubi_users').update({ nome, role, ativo }).eq('id', id);
+
+    // Troca de senha opcional
+    const update = { nome, role, ativo, tiny_vendor, permissoes };
+    if (req.body.nova_senha) {
+      const nova = sanitizeStr(req.body.nova_senha, 128);
+      if (nova.length < 8) return res.status(400).json({ ok: false, msg: 'Senha mínima 8 chars' });
+      update.password_hash = await require('bcryptjs').hash(nova, 10);
+    }
+
+    const { error } = await sb.from('rubi_users').update(update).eq('id', id);
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Usuário atualizado' });

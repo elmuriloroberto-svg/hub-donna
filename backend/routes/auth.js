@@ -62,10 +62,17 @@ router.post('/login', async (req, res) => {
     // JWT em cookie HttpOnly — JavaScript não consegue ler, bloqueia XSS
     setCookie(res, COOKIE_NAME, token, { maxAge: COOKIE_MAX_AGE * 1000 }); // Express expects ms
 
-    // Token NÃO retornado no body — só role/nome para renderizar a UI
+    // Busca permissoes e tiny_vendor para renderizar a UI corretamente
+    const { data: extra } = await supabase
+      .from('rubi_users').select('tiny_vendor, permissoes').eq('id', user.id).maybeSingle();
+
     res.json({
       ok: true,
-      user: { login: user.username, nome: user.nome, role: user.role },
+      user: {
+        login: user.username, nome: user.nome, role: user.role,
+        tiny_vendor: extra?.tiny_vendor || '',
+        permissoes:  extra?.permissoes  || {},
+      },
     });
   } catch (err) {
     console.error('[auth/login]', err.message);
@@ -80,11 +87,22 @@ router.post('/logout', (req, res) => {
 });
 
 // GET /api/auth/me — restaura sessão após reload de página
-router.get('/me', authenticateToken, (req, res) => {
-  res.json({
-    ok: true,
-    user: { login: req.user.login, nome: req.user.nome, role: req.user.role },
-  });
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const sb = getSupabase();
+    const { data: extra } = await sb
+      .from('rubi_users').select('tiny_vendor, permissoes').eq('id', req.user.id).maybeSingle();
+    res.json({
+      ok: true,
+      user: {
+        login: req.user.login, nome: req.user.nome, role: req.user.role,
+        tiny_vendor: extra?.tiny_vendor || '',
+        permissoes:  extra?.permissoes  || {},
+      },
+    });
+  } catch (_) {
+    res.json({ ok: true, user: { login: req.user.login, nome: req.user.nome, role: req.user.role, permissoes: {} } });
+  }
 });
 
 module.exports = router;
