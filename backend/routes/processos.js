@@ -27,21 +27,22 @@ router.get('/', authenticateToken, async (req, res) => {
 // CREATE processo
 router.post('/', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
-    const { titulo, categoria, conteudo } = req.body;
+    const { titulo, categoria, conteudo, links } = req.body;
     if (!titulo || !conteudo)
-      return res.status(400).json({ ok: false, msg: 'Campos obrigatórios faltando' });
+      return res.status(400).json({ ok: false, msg: 'Campos obrigatórios: titulo, conteudo' });
 
     const hoje = new Date().toISOString().split('T')[0];
     const sb = getSupabase();
     const { error } = await sb.from('processos').insert({
       titulo, categoria: categoria || '', conteudo,
+      links: links || '',
       autor_id: req.user.id, criado_em: hoje, atualizado_em: hoje,
     });
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Processo criado' });
   } catch (err) {
-    console.error(err);
+    console.error('[processos POST]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao criar processo' });
   }
 });
@@ -52,18 +53,21 @@ router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req,
     const { id } = req.params;
     if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
 
-    const { titulo, categoria, conteudo } = req.body;
+    const { titulo, categoria, conteudo, links } = req.body;
     const hoje = new Date().toISOString().split('T')[0];
+    const update = { atualizado_em: hoje };
+    if (titulo    !== undefined) update.titulo    = titulo;
+    if (categoria !== undefined) update.categoria = categoria;
+    if (conteudo  !== undefined) update.conteudo  = conteudo;
+    if (links     !== undefined) update.links     = links;
+
     const sb = getSupabase();
-    const { error } = await sb
-      .from('processos')
-      .update({ titulo, categoria, conteudo, atualizado_em: hoje })
-      .eq('id', id);
+    const { error } = await sb.from('processos').update(update).eq('id', id);
     if (error) throw new Error(error.message);
 
     res.json({ ok: true, msg: 'Processo atualizado' });
   } catch (err) {
-    console.error(err);
+    console.error('[processos PUT]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao atualizar processo' });
   }
 });
