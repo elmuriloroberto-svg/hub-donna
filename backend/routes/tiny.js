@@ -855,8 +855,15 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
         if (sbData.length > 0) {
           const newest   = sbData.reduce((m, r) => (r.atualizado_em > m ? r.atualizado_em : m), '');
           const ageHours = (Date.now() - new Date(newest).getTime()) / 3600000;
-          // 30h de tolerância: sync noturno roda às 23h, mas pode chegar até 01h do dia seguinte.
-          if (ageHours < 30) {
+
+          // Verifica qualidade do histórico de pedidos no Supabase.
+          // Se o sync foi rate-limitado após fetchContactDetails, dias_sem fica null para
+          // quase todos os contatos. Detectamos isso e usamos o path híbrido (Tiny) nesse caso.
+          const comHistoricoRecente = sbData.filter(r => r.dias_sem !== null && r.dias_sem <= 365).length;
+          const dataQualityOk = comHistoricoRecente / sbData.length > 0.05; // ≥5% com histórico recente
+
+          if (ageHours < 30 && dataQualityOk) {
+            // Fast path: Supabase tem dados frescos E histórico de pedidos válido
             const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
             const clientes = sortByRecency(sbData.map(r => {
               let diasSem = r.dias_sem;
@@ -865,45 +872,67 @@ router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'),
                 if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
               }
               return {
-                nome:            r.nome,
-                celular:         r.celular  || '',
-                telefone:        r.telefone || '',
-                telefones:       r.telefones || [],
-                ultimo_pedido:   r.ultimo_pedido || '—',
-                dias_sem:        diasSem,
-                temperatura:     classifyTemp(diasSem),
-                qtd_pedidos:     r.qtd_pedidos,
-                ticket_medio:    parseFloat(r.ticket_medio) || 0,
-                frequencia_dias: r.frequencia_dias,
-                total:           parseFloat(r.total) || 0,
+                nome: r.nome, celular: r.celular || '', telefone: r.telefone || '',
+                telefones: r.telefones || [], ultimo_pedido: r.ultimo_pedido || '—',
+                dias_sem: diasSem, temperatura: classifyTemp(diasSem),
+                qtd_pedidos: r.qtd_pedidos, ticket_medio: parseFloat(r.ticket_medio) || 0,
+                frequencia_dias: r.frequencia_dias, total: parseFloat(r.total) || 0,
               };
             }));
             const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
             const sbResult = { clientes, resumo, perfil, total: clientes.length, periodo };
             cache.set(KEY, { ts: Date.now(), data: sbResult });
-            console.log(`[crm-geral] Supabase: ${clientes.length} clientes (${Math.round(ageHours)}h atrás)`);
+            console.log(`[crm-geral] Supabase OK: ${clientes.length} (${Math.round(ageHours)}h, ${comHistoricoRecente} com hist.)`);
             return res.json({ ok: true, stale: false, source: 'supabase', ...sbResult });
           }
-          console.warn(`[crm-geral] Supabase desatualizado (${Math.round(ageHours)}h) — aguarde sync noturno.`);
+
+          // Híbrido: Supabase como base de contatos (phones) + Tiny para histórico de pedidos.
+          // O sync foi rate-limitado no fetchOrderHistory (rodou após 2000+ chamadas individuais).
+          // A correção no syncCrm.js inverte essa ordem — após o próximo sync o fast path funciona.
+          console.warn(`[crm-geral] Histórico Supabase inválido (${comHistoricoRecente}/${sbData.length} recentes) — usando Tiny para pedidos.`);
+
+          // Obtém histórico de pedidos: cache existente ou build de 2 anos (rápido, ~15-20s no Vercel)
+          let histData = null;
+          const histHit = swrGet('hist_10', CACHE_HIST) || swrGet('hist_2', CACHE_HIST);
+          if (histHit) {
+            histData = histHit.data;
+            if (histHit.stale) swrBuild('hist_10', () => _buildHistoricoClientes(10));
+          } else {
+            histData = await _buildHistoricoClientes(2); // 2 anos: ~15s, seguro no Vercel
+            cache.set('hist_2', { ts: Date.now(), data: histData });
+            swrBuild('hist_10', () => _buildHistoricoClientes(10)); // atualiza para 10a em background
+          }
+
+          // Indexa histórico por nome normalizado
+          const histByName = {};
+          for (const h of histData) { const nk = normName(h.nome); if (nk) histByName[nk] = h; }
+
+          // Mescla: Supabase = lista de contatos + phones; Tiny = histórico de pedidos
+          const hoje2 = new Date(); hoje2.setHours(0, 0, 0, 0);
+          const clientes2 = sortByRecency(sbData.map(r => {
+            const h = histByName[normName(r.nome)] || null;
+            const diasSem = h?.ultimo_pedido
+              ? Math.round((hoje2 - new Date(h.ultimo_pedido + 'T00:00:00')) / 86400000)
+              : null;
+            return {
+              nome: r.nome, celular: r.celular || '', telefone: r.telefone || '',
+              telefones: r.telefones || [], ultimo_pedido: h ? isoToBR(h.ultimo_pedido) : '—',
+              dias_sem: diasSem, temperatura: classifyTemp(diasSem),
+              qtd_pedidos: h?.qtd_pedidos || 0,
+              ticket_medio: (h && h.qtd_pedidos > 0) ? Math.round(h.valor_total / h.qtd_pedidos * 100) / 100 : 0,
+              frequencia_dias: h?.frequencia_dias ?? null,
+              total: h?.valor_total || 0,
+            };
+          }));
+          const { resumo: resumo2, perfil: perfil2 } = buildCrmResumoEPerfil(clientes2);
+          const hybridResult = { clientes: clientes2, resumo: resumo2, perfil: perfil2, total: clientes2.length, periodo };
+          cache.set(KEY, { ts: Date.now(), data: hybridResult });
+          console.log(`[crm-geral] Híbrido: ${clientes2.length} contatos (Supabase) × ${histData.length} pedidos (Tiny)`);
+          return res.json({ ok: true, stale: false, source: 'hybrid', ...hybridResult });
         }
 
-        // Supabase vazio ou desatualizado: o _buildCrmTemp(0) busca 10 anos do Tiny e
-        // ultrapassa o timeout do Vercel. Retorna loading — próximo sync noturno resolverá.
-        if (sbData.length === 0) {
-          return res.status(202).json({ ok: false, loading: true, msg: 'Dados do CRM ainda não sincronizados. O sync noturno roda às 23h e leva ~20 min. Use o botão "Sync Completo" para forçar.' });
-        }
-        // Dados existem mas estão velhos: retorna stale com aviso
-        const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-        const clientes = sortByRecency(sbData.map(r => {
-          let diasSem = r.dias_sem;
-          if (r.ultimo_pedido && r.ultimo_pedido !== '—') {
-            const dt = parseDateBR(r.ultimo_pedido) || new Date(r.ultimo_pedido);
-            if (dt && !isNaN(dt)) diasSem = Math.round((hoje - dt) / 86400000);
-          }
-          return { nome: r.nome, celular: r.celular || '', telefone: r.telefone || '', telefones: r.telefones || [], ultimo_pedido: r.ultimo_pedido || '—', dias_sem: diasSem, temperatura: classifyTemp(diasSem), qtd_pedidos: r.qtd_pedidos, ticket_medio: parseFloat(r.ticket_medio) || 0, frequencia_dias: r.frequencia_dias, total: parseFloat(r.total) || 0 };
-        }));
-        const { resumo, perfil } = buildCrmResumoEPerfil(clientes);
-        return res.json({ ok: true, stale: true, source: 'supabase_stale', clientes, resumo, perfil, total: clientes.length, periodo });
+        // Supabase vazio
+        return res.status(202).json({ ok: false, loading: true, msg: 'Dados do CRM ainda não sincronizados. O sync noturno roda às 23h e leva ~20 min. Use o botão "Sync Completo" para forçar.' });
       } catch (sbErr) {
         console.warn('[crm-temp] Supabase Geral indisponível:', sbErr.message);
         return res.status(503).json({ ok: false, loading: true, msg: 'Supabase indisponível. Tente novamente.' });

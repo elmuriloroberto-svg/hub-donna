@@ -188,14 +188,17 @@ async function syncCrmFull() {
   const ids = await fetchAllContactIds();
   console.log(`[syncCrm] ${ids.length} contatos encontrados.`);
 
-  // 2. Detalhes (celular real)
-  console.log('[syncCrm] Buscando detalhes de cada contato (pode levar 15-20min)...');
-  const detalhes = await fetchContactDetails(ids);
-
-  // 3. Histórico de pedidos
-  console.log('[syncCrm] Buscando histórico de pedidos (2 anos)...');
+  // 2. Histórico de pedidos PRIMEIRO — enquanto o rate limit está zerado.
+  //    fetchContactDetails faz 2000+ chamadas individuais e esgota a cota do Tiny;
+  //    se fetchOrderHistory rodar depois, pega zero resultados.
+  console.log('[syncCrm] Buscando histórico de pedidos (10 anos)...');
   const hist = await fetchOrderHistory();
   console.log(`[syncCrm] ${hist.length} clientes com pedidos encontrados.`);
+
+  // 3. Detalhes individuais (celular real) — pode ser parcialmente rate-limitado,
+  //    mas o histórico já está salvo acima.
+  console.log('[syncCrm] Buscando detalhes de cada contato (pode levar 15-20min)...');
+  const detalhes = await fetchContactDetails(ids);
 
   // Indexa histórico por id_contato, cpf, nome normalizado
   const histById   = {};
