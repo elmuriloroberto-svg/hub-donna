@@ -45,11 +45,74 @@ router.get('/receber', authenticateToken, async (req, res) => {
     ]);
     if (brRes.error) throw new Error(brRes.error.message);
     const cliMap = Object.fromEntries((cliRes.data || []).map(c => [c.id, c.nome]));
-    const data = (brRes.data || []).map(r => ({ ...r, cliente: cliMap[r.cliente_id] || '' }));
+    const data = (brRes.data || []).map(r => ({ ...r, cliente: r.cliente_nome || cliMap[r.cliente_id] || '' }));
     res.json({ ok: true, data });
   } catch (err) {
     console.error('[boletos/receber]', err.message);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar recebíveis' });
+  }
+});
+
+// POST /api/boletos/receber — aceita {cliente_nome, pedido, forma_pagamento, valor_total, parcelas:[{valor,vencimento}]}
+router.post('/receber', authenticateToken, async (req, res) => {
+  try {
+    const { cliente_nome, pedido, forma_pagamento, valor_total, parcelas } = req.body;
+    if (!cliente_nome) return res.status(400).json({ ok: false, msg: 'Cliente é obrigatório' });
+
+    const sb = getSupabase();
+    const { data: cliData } = await sb.from('clientes').select('id').ilike('nome', cliente_nome.trim()).limit(1);
+    const cliente_id = cliData?.[0]?.id || null;
+
+    const rows = (Array.isArray(parcelas) && parcelas.length > 0
+      ? parcelas
+      : [{ valor: valor_total, vencimento: new Date().toISOString().slice(0, 10) }]
+    ).map(p => ({
+      cliente_id,
+      cliente_nome: String(cliente_nome).trim(),
+      pedido:        pedido || '',
+      forma_pagamento: forma_pagamento || 'PIX',
+      valor:         parseFloat(p.valor),
+      vencimento:    p.vencimento,
+      status:        'pendente',
+    }));
+
+    const { error } = await sb.from('boletos_receber').insert(rows);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, msg: `${rows.length} parcela(s) salva(s)` });
+  } catch (err) {
+    console.error('[boletos/receber POST]', err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+// PUT /api/boletos/receber/:id — atualiza status
+router.put('/receber/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+    const { status } = req.body;
+    const sb = getSupabase();
+    const { error } = await sb.from('boletos_receber').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, msg: 'Atualizado' });
+  } catch (err) {
+    console.error('[boletos/receber PUT]', err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+// DELETE /api/boletos/receber/:id
+router.delete('/receber/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+    const sb = getSupabase();
+    const { error } = await sb.from('boletos_receber').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true, msg: 'Removido' });
+  } catch (err) {
+    console.error('[boletos/receber DELETE]', err.message);
+    res.status(500).json({ ok: false, msg: err.message });
   }
 });
 
