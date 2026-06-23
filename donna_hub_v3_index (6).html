@@ -1435,9 +1435,15 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
               <div><span style="font-size:11px;color:var(--mu);display:block;margin-bottom:2px">Lucro desta entrega</span><strong id="entr-prev-lucro" style="font-size:16px">—</strong></div>
               <div><span style="font-size:11px;color:var(--mu);display:block;margin-bottom:2px">Margem</span><strong id="entr-prev-margem" style="font-size:15px;color:var(--mu)">—</strong></div>
             </div>
-            <div class="fld">
-              <label>Observa&ccedil;&otilde;es (opcional)</label>
-              <input type="text" id="entr-obs" placeholder="Ex: cliente, endere&ccedil;o, refer&ecirc;ncia">
+            <div class="two-col">
+              <div class="fld">
+                <label>Nome da Cliente</label>
+                <input type="text" id="entr-nomecliente" placeholder="Ex: Ana Paula">
+              </div>
+              <div class="fld">
+                <label>Observa&ccedil;&otilde;es (opcional)</label>
+                <input type="text" id="entr-obs" placeholder="Ex: endere&ccedil;o, refer&ecirc;ncia">
+              </div>
             </div>
             <button class="btn-prim" onclick="salvarEntrega()"><i class="fa-solid fa-floppy-disk"></i>Salvar Entrega</button>
           </div>
@@ -1457,10 +1463,10 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
             <table class="tbl">
               <thead>
                 <tr>
-                  <th>Data</th><th>N&ordm; Venda</th><th>Modal</th><th>Custo</th><th>Cobrado</th><th>Lucro</th><th>Observa&ccedil;&otilde;es</th><th></th>
+                  <th>Data</th><th>N&ordm; Venda</th><th>Cliente</th><th>Modal</th><th>Custo</th><th>Cobrado</th><th>Lucro</th><th>Observa&ccedil;&otilde;es</th><th></th>
                 </tr>
               </thead>
-              <tbody id="tbody-entregas"><tr><td colspan="8" style="text-align:center;color:var(--mu);padding:28px">Carregando...</td></tr></tbody>
+              <tbody id="tbody-entregas"><tr><td colspan="9" style="text-align:center;color:var(--mu);padding:28px">Carregando...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -4948,11 +4954,13 @@ function renderEntregas(search,lista){
   const tbody=document.getElementById('tbody-entregas');if(!tbody)return;
   const mes=document.getElementById('entr-mes-sel')?.value||_mesAtual();
   let list=lista!==undefined?lista:_entregas.filter(e=>e.mes===mes);
-  if(search)list=list.filter(e=>
-    (e.obs||'').toLowerCase().includes(search.toLowerCase())||
-    (e.num_venda||'').toLowerCase().includes(search.toLowerCase())||
-    _formaConfig(e.forma_envio||'').label.toLowerCase().includes(search.toLowerCase())
-  );
+  if(search)list=list.filter(e=>{
+    const q=search.toLowerCase();
+    return (e.obs||'').toLowerCase().includes(q)||
+      (e.num_venda||'').toLowerCase().includes(q)||
+      (e.nome_cliente||'').toLowerCase().includes(q)||
+      _formaConfig(e.forma_envio||'').label.toLowerCase().includes(q);
+  });
   list=[...list].sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   tbody.innerHTML=list.length?list.map(e=>{
     const custo  =parseFloat(e.custo_entrega||e.valor_uber||0);
@@ -4961,6 +4969,7 @@ function renderEntregas(search,lista){
     return `<tr>
       <td>${e.data||'—'}</td>
       <td><strong>${e.num_venda||'—'}</strong></td>
+      <td style="font-size:12px">${e.nome_cliente||'—'}</td>
       <td>${_formaBadge(e.forma_envio||'uber')}</td>
       <td style="color:var(--er)">${R(custo)}</td>
       <td><strong>${R(cobrado)}</strong></td>
@@ -4968,7 +4977,7 @@ function renderEntregas(search,lista){
       <td style="font-size:12px;color:var(--mu);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.obs||''}">${e.obs||'—'}</td>
       <td><button class="tbl-action" onclick="delEntrega('${e.id}')"><i class="fa-solid fa-trash-can"></i></button></td>
     </tr>`;
-  }).join(''):`<tr><td colspan="8" style="text-align:center;color:var(--mu);padding:28px">Nenhuma entrega registrada neste período.</td></tr>`;
+  }).join(''):`<tr><td colspan="9" style="text-align:center;color:var(--mu);padding:28px">Nenhuma entrega registrada neste período.</td></tr>`;
 }
 
 function filterEntregas(search){renderEntregas(search);}
@@ -4979,17 +4988,18 @@ async function salvarEntrega(){
   const forma  =document.getElementById('entr-forma')?.value;
   const custo  =document.getElementById('entr-custo')?.value;
   const cobrado=document.getElementById('entr-cobrado')?.value;
-  const obs    =(document.getElementById('entr-obs')?.value||'').trim();
+  const obs         =(document.getElementById('entr-obs')?.value||'').trim();
+  const nome_cliente=(document.getElementById('entr-nomecliente')?.value||'').trim();
   if(!data||!forma||!custo||!cobrado){toast('Preencha data, modal de envio e valores','fa-triangle-exclamation');return;}
   const lucro=(parseFloat(cobrado)||0)-(parseFloat(custo)||0);
   try{
     const r=await fetch('/api/entregas',{
       method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',
-      body:JSON.stringify({data,num_venda:numV,forma_envio:forma,valor_cobrado:cobrado,valor_uber:custo,obs})
+      body:JSON.stringify({data,num_venda:numV,forma_envio:forma,valor_cobrado:cobrado,valor_uber:custo,obs,nome_cliente})
     });
     const d=await r.json();
     if(!d.ok)throw new Error(d.msg||'Erro');
-    ['entr-numvenda','entr-custo','entr-cobrado','entr-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['entr-numvenda','entr-nomecliente','entr-custo','entr-cobrado','entr-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('entr-forma').value='';
     const prev=document.getElementById('entr-preview');if(prev)prev.style.display='none';
     await loadEntregas();

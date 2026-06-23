@@ -17,7 +17,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const sb = getSupabase();
     let query = sb
       .from('entregas')
-      .select('id, data, num_venda, forma_envio, valor_cobrado, valor_uber, obs, status')
+      .select('id, data, num_venda, nome_cliente, forma_envio, valor_cobrado, valor_uber, obs, status')
       .order('data', { ascending: false });
 
     if (mes && /^\d{4}-\d{2}$/.test(mes)) {
@@ -38,7 +38,7 @@ router.get('/', authenticateToken, async (req, res) => {
 // POST /api/entregas — registra nova entrega
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { data: dataEntrega, num_venda, forma_envio, valor_cobrado, valor_uber, obs } = req.body;
+    const { data: dataEntrega, num_venda, nome_cliente, forma_envio, valor_cobrado, valor_uber, obs } = req.body;
     if (!dataEntrega || valor_cobrado == null || valor_uber == null)
       return res.status(400).json({ ok: false, msg: 'Campos obrigatórios: data, valor_cobrado, valor_uber' });
 
@@ -51,6 +51,7 @@ router.post('/', authenticateToken, async (req, res) => {
     const { error } = await sb.from('entregas').insert({
       data:         dataEntrega,
       num_venda:    num_venda || '',
+      nome_cliente: nome_cliente || '',
       forma_envio:  forma_envio || 'uber',
       valor_cobrado: cobrado,
       valor_uber:   custo,
