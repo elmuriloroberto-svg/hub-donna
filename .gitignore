@@ -1,4 +1,5 @@
 .vercel
+.claude/
 
 # Dependências
 node_modules/
@@ -28,3 +29,4 @@ npm-debug.log*
 # Temporários
 tmp_*
 *.tmp
+.env*
