@@ -1409,6 +1409,12 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
                 <input type="text" id="entr-numvenda" placeholder="Ex: 1042">
               </div>
               <div class="fld">
+                <label>Nome da Cliente</label>
+                <input type="text" id="entr-nomecliente" placeholder="Ex: Ana Paula">
+              </div>
+            </div>
+            <div class="two-col">
+              <div class="fld">
                 <label>Modal de Envio</label>
                 <select id="entr-forma">
                   <option value="">Selecione...</option>
@@ -1417,6 +1423,10 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
                   <option value="correios">Correios</option>
                   <option value="donna">Entrega Donna</option>
                 </select>
+              </div>
+              <div class="fld">
+                <label>Observa&ccedil;&otilde;es (opcional)</label>
+                <input type="text" id="entr-obs" placeholder="Ex: endere&ccedil;o, refer&ecirc;ncia">
               </div>
             </div>
             <div class="two-col">
@@ -1434,16 +1444,6 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
             <div id="entr-preview" style="display:none;background:rgba(45,122,79,.07);border:1px solid rgba(45,122,79,.18);border-radius:10px;padding:12px 16px;margin-bottom:14px;gap:28px;align-items:center">
               <div><span style="font-size:11px;color:var(--mu);display:block;margin-bottom:2px">Lucro desta entrega</span><strong id="entr-prev-lucro" style="font-size:16px">—</strong></div>
               <div><span style="font-size:11px;color:var(--mu);display:block;margin-bottom:2px">Margem</span><strong id="entr-prev-margem" style="font-size:15px;color:var(--mu)">—</strong></div>
-            </div>
-            <div class="two-col">
-              <div class="fld">
-                <label>Nome da Cliente</label>
-                <input type="text" id="entr-nomecliente" placeholder="Ex: Ana Paula">
-              </div>
-              <div class="fld">
-                <label>Observa&ccedil;&otilde;es (opcional)</label>
-                <input type="text" id="entr-obs" placeholder="Ex: endere&ccedil;o, refer&ecirc;ncia">
-              </div>
             </div>
             <button class="btn-prim" onclick="salvarEntrega()"><i class="fa-solid fa-floppy-disk"></i>Salvar Entrega</button>
           </div>
