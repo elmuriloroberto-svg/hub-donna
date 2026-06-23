@@ -874,7 +874,7 @@ function sortByRecency(arr) {
   return arr.sort((a, b) => (a.dias_sem ?? 99999) - (b.dias_sem ?? 99999));
 }
 
-router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+router.get('/crm-temperatura', authenticateToken, authorize('admin', 'gerente', 'vendedor'), async (req, res) => {
   const periodo = Math.max(parseInt(req.query.periodo ?? '30'), 0);
   const KEY = `crm_temp_${periodo}`;
 

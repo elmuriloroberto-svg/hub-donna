@@ -2156,40 +2156,12 @@ const S = {
   users: [
     // Usuários carregados via /api/auth/me — sem credenciais hardcoded
   ],
-  boletos_p: [
-    { id:'b1', fornecedor:'Impala Cosmeticos', valor:3200, vencimento:'2026-05-05', status:'vencido',  obs:'NF 1234' },
-    { id:'b2', fornecedor:'Real Love',         valor:1850, vencimento:'2026-05-10', status:'pendente', obs:'NF 5678' },
-    { id:'b3', fornecedor:'Koloss',            valor:4100, vencimento:'2026-05-22', status:'pendente', obs:'NF 9012' },
-    { id:'b4', fornecedor:'Colorama',          valor:2800, vencimento:'2026-04-28', status:'pago',     obs:'NF 3456' },
-  ],
-  boletos_r: [
-    { id:'r1', cliente:'Salao Beleza Total', valor:1400, vencimento:'2026-05-08', status:'pendente', pedido:'#1042' },
-    { id:'r2', cliente:'Studio Glam',        valor:2700, vencimento:'2026-05-03', status:'atrasado', pedido:'#1038' },
-    { id:'r3', cliente:'Nails & Art',        valor:980,  vencimento:'2026-05-17', status:'pendente', pedido:'#1047' },
-    { id:'r4', cliente:'Top Nails',          valor:1200, vencimento:'2026-04-30', status:'recebido', pedido:'#1033' },
-  ],
-  tasks: [
-    { id:'t1', titulo:'Conferir estoque Impala', desc:'Basico e premium.', collab:'ana',    prazo:'2026-05-10', prio:'alta',  done:false, delegadoPor:'admin' },
-    { id:'t2', titulo:'Atualizar precos Koloss', desc:'Apos reajuste.',    collab:'ana',    prazo:'2026-05-12', prio:'media', done:false, delegadoPor:'admin' },
-    { id:'t3', titulo:'Ligar Salao Beleza Total',desc:'Boleto atrasado.',  collab:'carlos', prazo:'2026-05-09', prio:'alta',  done:true,  delegadoPor:'admin' },
-  ],
-  metas: [
-    { id:'m1', colaborador:'ana',    mes:'2026-05', metaValor:8000,  realizado:5200 },
-    { id:'m2', colaborador:'carlos', mes:'2026-05', metaValor:12000, realizado:9800 },
-  ],
-  clientes: [
-    { id:'c1', nome:'Salão Beleza Total', tipo:'Salão', telefone:'(11) 98765-4321', email:'contato@belezatotal.com', endereco:'Av. Paulista, 1234, SP', cpf_cnpj:'12.345.678/0001-99', ativo:true, obs:'Cliente regular desde 2024' },
-    { id:'c2', nome:'Studio Glam Nails', tipo:'Profissional', telefone:'(11) 91234-5678', email:'glam@studio.com', endereco:'R. Oscar Freire, 220, SP', cpf_cnpj:'98.765.432/0001-12', ativo:true, obs:'Venda mensal alta' },
-    { id:'c3', nome:'Nails & Art', tipo:'Consumidor Final', telefone:'(11) 99876-5432', email:'sac@nailsart.com', endereco:'Av. Brasil, 850, SP', cpf_cnpj:'123.456.789-00', ativo:true, obs:'Solicita etiquetas personalizadas' },
-  ],
-  processos: [
-    { id:'p1', titulo:'Como calcular preco de venda', categoria:'vendas', conteudo:'1. Abra a Calculadora de Precos\n2. Insira o custo do produto\n3. Defina a margem desejada\n   Varejo: 35% | Atacarejo: 20%\n4. O sistema aplica automaticamente:\n   Encargos fixos 22,18% + Taxa cartao 6% = 28,18%\n5. Preco = Custo / (1 - Margem% - 28,18%)', autor:'Murilo', criadoEm:'2026-04-01', atualizadoEm:'2026-04-20' },
-    { id:'p2', titulo:'Politica de troca de mercadorias', categoria:'logistica', conteudo:'1. Prazo maximo: 7 dias apos a compra\n2. Produto deve estar lacrado e sem uso\n3. Cliente apresenta nota fiscal\n4. Gerente autoriza a troca\n5. Registrar no Tiny como devolucao\n6. Emitir nova NF para o produto trocado', autor:'Murilo', criadoEm:'2026-04-05', atualizadoEm:'2026-04-05' },
-    { id:'p3', titulo:'Linha Impala - Guia de Produtos', categoria:'produtos', conteudo:'**Esmaltes Basicos:** 8ml, 200+ cores, custo R$4-8\n**Esmaltes Premium:** 10ml, acabamentos especiais, custo R$8-15\n**Base Coat:** protecao, custo R$6-10\n**Top Coat:** brilho e fixacao, custo R$6-10\n\nDiferenciais: formula livre de tolueno, secagem rapida\nPublico: saloes, manicures, consumidor final\nEstoque minimo: 50 unidades por categoria', autor:'Murilo', criadoEm:'2026-04-10', atualizadoEm:'2026-04-10' },
-    { id:'p4', titulo:'Fluxo de cobranca de boletos', categoria:'financeiro', conteudo:'D-5: Enviar lembrete por WhatsApp\nD-2: Ligar para confirmar pagamento\nD+1: Contato para verificar\nD+3: Notificar gerencia e bloquear novos pedidos\nD+7: Encaminhar para cobranca formal', autor:'Murilo', criadoEm:'2026-04-12', atualizadoEm:'2026-04-12' },
-    { id:'p5', titulo:'Admissao CLT - Documentos', categoria:'rh', conteudo:'Documentos: RG, CPF, CTPS, comprovante residencia, foto 3x4\nExame admissional obrigatorio\nRegistro na CTPS em ate 48h\nCadastro no ponto eletronico\nTreinamento inicial: 3 dias com supervisor\nExperiencia: 45 + 45 dias', autor:'Murilo', criadoEm:'2026-04-15', atualizadoEm:'2026-04-15' },
-    { id:'p6', titulo:'Abertura de Loja', categoria:'logistica', conteudo:'Loja abre às 08h00 · Colaborador chega às 07h45 já uniformizado\n\n**1. Ações Externas (07h45 — antes de entrar na loja)**\n1. Chegar uniformizada(o)\n2. Abrir as duas portas metálicas da frente\n3. Abrir a porta de vidro principal\n4. Desativar o alarme imediatamente ao entrar\n5. Fechar a porta de vidro por segurança\n6. Bater o ponto\n\n**2. Organização Inicial do Colaborador (07h47 – 07h50)**\n1. Guardar itens pessoais no estoque\n2. Ajustar uniforme, prender o cabelo se necessário e iniciar as atividades\n3. Adotar postura profissional (sem celular pessoal fora dos intervalos)\n\n**3. Ativação da Loja (07h50 – 07h55)**\n1. Ligar todas as luzes da loja e do estoque\n2. Ligar ar-condicionado (22–23°C)\n3. Ligar computador\n4. Ligar e testar maquininhas de cartão\n5. Conferir modem/wi-fi\n\n**4. Limpeza, Aparência e Ambiente (07h55 – 08h00)**\n\n4.1 Verificação rápida de limpeza e showroom:\n- Verificar chão (poeira, sujeiras, insetos mortos)\n- Ajustar o tapete da entrada\n- Conferir se não há terra ou folhas trazidas de fora\n- Ver se não há caixas soltas no salão\n\n4.2 Cheirinho signature Donna — aplicar nos pontos estratégicos:\n- Tapete com grama sintética da entrada\n- Caixas expostas\n- Área central da loja\n\n4.3 Organização visual:\n- Produtos virados para frente\n- Gôndolas alinhadas\n- Vitrines organizadas\n- Balcão limpo e sem itens desnecessários\n- Sacolas suficientes no PDV\n- Banheiro revisado\n\n**5. Reposição Inicial dos Produtos Mais Vendidos**\nAntes da loja abrir oficialmente:\n1. Verificar rapidamente o Top 20 mais vendidos:\n   Removedores · Bases · Top coat · Esmaltes de giro rápido · Gel · Lixas · Pincéis essenciais\n2. Repor na gôndola caso esteja visivelmente baixo\n3. Organizar frentes para não deixar "buracos"\n4. Caso algo esteja faltando no estoque:\n   - Notificar o responsável por compras mais tarde\n   - Anotar ruptura no caderno interno ou sistema\n\n**CHECKLIST RÁPIDO — ABERTURA**\nAntes do ponto: Portas metálicas · Porta de vidro · Alarme desativado\nDepois do ponto: Pertences no estoque · Uniforme ajustado\nAtivação: Luzes · Ar-condicionado · Computador · Maquininhas · Internet\nLimpeza: Chão · Tapete · Cheirinho signature · Gôndolas · Balcão · Sacolas · Banheiro\nReposição: Top 20 reposto · Frentes organizadas · Rupturas registradas', autor:'muriloroberto', criadoEm:'2026-05-20', atualizadoEm:'2026-05-20' },
-  ],
+  boletos_p: [],
+  boletos_r: [],
+  tasks: [],
+  metas: [],
+  clientes: [],
+  processos: [],
   // epProducts and skip managed by EtiquetaPro engine
   folha: [],
   currentUser: null,
@@ -2203,7 +2175,17 @@ function dbGet(key, fallback){
 function dbSet(key, data){
   try{localStorage.setItem('donna_'+key, JSON.stringify(data));}catch(e){}
 }
+function _purgeDemoData(){
+  const demoIds=new Set(['b1','b2','b3','b4','r1','r2','r3','r4','t1','t2','t3','m1','m2','c1','c2','c3','p1','p2','p3','p4','p5']);
+  ['boletos_p','boletos_r','tasks','metas','clientes','processos'].forEach(k=>{
+    try{
+      const v=JSON.parse(localStorage.getItem('donna_'+k)||'null');
+      if(Array.isArray(v)&&v.length&&v.every(i=>demoIds.has(i.id)))localStorage.removeItem('donna_'+k);
+    }catch{}
+  });
+}
 function loadLocalData(){
+  _purgeDemoData();
   const users = dbGet('users', null);
   if(Array.isArray(users) && users.length){ S.users = users; }
   const clientes = dbGet('clientes', null);
@@ -2251,18 +2233,16 @@ function saveLocalData(){
 }
 
 async function syncFromServer(){
+  // Sincroniza apenas config (formula) — todos os outros módulos têm APIs dedicadas
   try{
     const r=await fetch('/api/db',{credentials:'include'});
     if(!r.ok)return;
     const {ok,data}=await r.json();
-    if(!ok||!data||!Object.keys(data).length)return;
-    let changed=false;
-    for(const[k,v]of Object.entries(data)){
-      if(localStorage.getItem('donna_'+k)===null){
-        try{localStorage.setItem('donna_'+k,JSON.stringify(v));changed=true;}catch{}
-      }
+    if(!ok||!data)return;
+    if(data.config&&localStorage.getItem('donna_config')===null){
+      try{localStorage.setItem('donna_config',JSON.stringify(data.config));}catch{}
+      loadLocalData();
     }
-    if(changed)loadLocalData();
   }catch{}
 }
 
@@ -2906,7 +2886,7 @@ async function buscarVendasTiny(){
   body.innerHTML='<div class="spinner-wrap"><div class="spinner"></div><div style="font-size:13px;color:var(--mu)">Buscando vendas no Tiny...</div></div>';
   try{
     const url=`/api/tiny/vendas?de=${encodeURIComponent(deBR)}&paginas=5`;
-    const resp=await fetch(url);
+    const resp=await fetch(url,{credentials:'include'});
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     const r=await resp.json();
     if(!r.ok)throw new Error(r.msg||'Erro API');
@@ -3339,7 +3319,7 @@ async function loadDashboard(){
 
   try{
     const url=`/api/tiny/dashboard?mes=${mes}${vendedorFiltro?'&vendedor='+encodeURIComponent(vendedorFiltro):''}`;
-    const resp=await fetch(url);
+    const resp=await fetch(url,{credentials:'include'});
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     const d=await resp.json();
     if(!d.ok)throw new Error(d.msg);
@@ -3845,7 +3825,7 @@ async function carregarPerfilCRM() {
 // Mostra botão Sync Completo só para admin (chamado no nav)
 function initCrmSyncBtn() {
   const btn = document.getElementById('crm-sync-btn');
-  if (btn) btn.style.display = S.role === 'admin' ? 'inline-flex' : 'none';
+  if (btn) btn.style.display = S.currentUser?.role === 'admin' ? 'inline-flex' : 'none';
 }
 
 async function triggerSyncCRM() {
