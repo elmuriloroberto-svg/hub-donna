@@ -44,6 +44,10 @@ if (!isProd) {
   );
 }
 
+// Aceita qualquer URL de deploy do projeto donna-hub no Vercel (deploy único e alias).
+// Padrões: donna-hub.vercel.app, donnahub*.vercel.app, donna-*-donnaproject.vercel.app
+const VERCEL_ORIGIN_RE = /^https:\/\/(donna-hub|donnahub[^.]*|donna-[a-z0-9]+-donnaproject)\.vercel\.app$/;
+
 // ── [ML-1] X-Request-ID — rastreabilidade de logs (igual ao x-request-id do ML) ──
 app.use((req, res, next) => {
   const id = randomUUID();
@@ -106,7 +110,9 @@ app.use(
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      if (VERCEL_ORIGIN_RE.test(origin)) return cb(null, true);
       cb(Object.assign(new Error('Origem não permitida por CORS'), { status: 403 }));
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
