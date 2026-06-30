@@ -750,7 +750,7 @@ router.get('/fornecedores', authenticateToken, async (req, res) => {
 
 // ── HISTÓRICO CLIENTES ────────────────────────────────────────────────────────
 
-router.get('/historico-clientes', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+router.get('/historico-clientes', authenticateToken, authorize('admin', 'gerente', 'vendedor'), async (req, res) => {
   try {
     const anos = Math.min(Math.max(parseFloat(req.query.anos||'5'), 0.5), 10);
     const key  = `hist_${anos}`;
