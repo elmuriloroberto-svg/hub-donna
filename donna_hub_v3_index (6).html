@@ -711,6 +711,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <button class="nb" onclick="nav('recebiveis',this)" id="nb-recebiveis"><i class="fa-solid fa-hand-holding-dollar"></i>Recebíveis</button>
       <button class="nb" onclick="nav('agenda',this)" id="nb-agenda"><i class="fa-solid fa-calendar-check"></i>Calendário<span class="badge" id="badge-agenda" style="display:none">0</span></button>
       <button class="nb" onclick="nav('folha',this)" id="nb-folha"><i class="fa-solid fa-file-invoice-dollar"></i>Folha de Pagamento</button>
+      <button class="nb" onclick="nav('ponto',this)" id="nb-ponto"><i class="fa-solid fa-fingerprint"></i>Folha de Ponto</button>
       <button class="nb" onclick="nav('metas',this)" id="nb-metas"><i class="fa-solid fa-bullseye"></i>Metas</button>
       <button class="nb" onclick="nav('processos',this)" id="nb-processos"><i class="fa-solid fa-book-open"></i>Processos (Wiki)</button>
       <button class="nb" onclick="nav('usuarios',this)" id="nb-usuarios"><i class="fa-solid fa-users-gear"></i>Gerenciar Usuários</button>
@@ -1713,6 +1714,45 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════════ VT & VR -->
+      <!-- ══ FOLHA DE PONTO ══════════════════════════════════════ -->
+      <div class="page" id="pg-ponto">
+
+        <!-- Meu ponto hoje -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-ttl"><i class="fa-solid fa-fingerprint"></i>Meu Ponto · <span id="ponto-data-label" style="font-weight:400;color:var(--mu)"></span></div>
+          <div id="ponto-marcadores" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px"></div>
+          <input type="file" id="ponto-camera" accept="image/*" capture="user" style="display:none" onchange="pontoCameraCapture(event)">
+        </div>
+
+        <!-- Painel admin: todos os registros -->
+        <div id="ponto-admin-secao" style="display:none">
+          <div class="card">
+            <div class="card-ttl"><i class="fa-solid fa-table-list"></i>Registros da Equipe</div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+              <input type="date" id="ponto-flt-data" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);color:var(--ink);font-size:13px">
+              <button class="btn-sec" onclick="loadPontoAdmin()"><i class="fa-solid fa-magnifying-glass"></i> Ver</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="tbl">
+                <thead><tr><th>Colaborador</th><th>Chegada</th><th>Saída Almoço</th><th>Retorno</th><th>Saída</th></tr></thead>
+                <tbody id="tbody-ponto"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: visualizar foto de ponto (admin) -->
+      <div class="modal-overlay" id="modal-ponto-foto" onclick="if(event.target===this)closeModal('modal-ponto-foto')">
+        <div class="modal-box" style="max-width:420px;width:95vw;text-align:center">
+          <div class="modal-hd">
+            <div class="modal-ttl"><i class="fa-solid fa-image"></i>Foto do Ponto</div>
+            <button class="modal-cls" onclick="closeModal('modal-ponto-foto')"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+          <img id="ponto-foto-img" src="" alt="Foto do ponto" style="width:100%;border-radius:10px;margin-top:10px;max-height:70vh;object-fit:contain">
+        </div>
+      </div>
+
       <div class="page" id="pg-vtvr">
         <div style="margin-bottom:18px">
           <h2 style="font-size:20px;font-weight:700;margin:0">VT &amp; VR</h2>
@@ -2412,13 +2452,13 @@ const LOCAL = {
 
 /* -- RBAC ------------------------------------------- */
 const PERMS = {
-  admin:       ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas','folha','vtvr','usuarios'],
-  gerente:     ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas'],
-  vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA'],
-  colaborador: ['calculadora'],
+  admin:       ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas','folha','vtvr','ponto','usuarios'],
+  gerente:     ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas','ponto'],
+  vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA','ponto'],
+  colaborador: ['calculadora','ponto'],
 };
-const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Calendário',boletos:'Contas a Pagar',recebiveis:'Recebíveis',clientes:'Clientes',crm:'CRM de Clientes',entregas:'Controle de Entregas',cultura:'Cultura & IA',donnaIA:'Donna IA',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Pagamento',vtvr:'VT & VR',usuarios:'Gerenciar Usuários'};
-const BCS    = {dashboard:'Vendas & CRM',calculadora:'Operacional',tiny:'Vendas & CRM',agenda:'Gestão & Equipe',boletos:'Financeiro',recebiveis:'Financeiro',clientes:'Vendas & CRM',crm:'Vendas & CRM',entregas:'Operacional',cultura:'Administração',donnaIA:'Administração',processos:'Gestão & Equipe',metas:'Gestão & Equipe',folha:'Gestão & Equipe',vtvr:'Gestão & Equipe',usuarios:'Administração'};
+const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Calendário',boletos:'Contas a Pagar',recebiveis:'Recebíveis',clientes:'Clientes',crm:'CRM de Clientes',entregas:'Controle de Entregas',cultura:'Cultura & IA',donnaIA:'Donna IA',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Pagamento',vtvr:'VT & VR',ponto:'Folha de Ponto',usuarios:'Gerenciar Usuários'};
+const BCS    = {dashboard:'Vendas & CRM',calculadora:'Operacional',tiny:'Vendas & CRM',agenda:'Gestão & Equipe',boletos:'Financeiro',recebiveis:'Financeiro',clientes:'Vendas & CRM',crm:'Vendas & CRM',entregas:'Operacional',cultura:'Administração',donnaIA:'Administração',processos:'Gestão & Equipe',metas:'Gestão & Equipe',folha:'Gestão & Equipe',vtvr:'Gestão & Equipe',ponto:'Gestão & Equipe',usuarios:'Administração'};
 
 /* -- AUTH ------------------------------------------- */
 async function handleLogin() {
@@ -2570,6 +2610,7 @@ function nav(page,el){
   if(page==='crm'){carregarCRM();initCrmSyncBtn();carregarPerfilCRM();}
   if(page==='dashboard'){loadDashboard();loadMetaSemana();}
   if(page==='folha')renderFolhaHist();
+  if(page==='ponto')loadPonto();
   if(page==='vtvr')calcVtVr('gab'),calcVtVr('mur');
   if(page==='entregas')loadEntregas();
   if(page==='boletos')loadBoletos();
@@ -6287,7 +6328,7 @@ function renderFolhaHist(){
       <td style="color:var(--er)">${R2(f.adiantamento)}</td>
       <td><strong style="color:var(--ok)">${R2(f.total_liquido)}</strong></td>
       <td>
-        ${S.user?.role==='admin'?`<button class="tbl-action" onclick="editarFolha('${f.id}')" title="Editar"><i class="fa-solid fa-pen"></i></button>`:''}
+        ${S.currentUser?.role==='admin'?`<button class="tbl-action" onclick="editarFolha('${f.id}')" title="Editar"><i class="fa-solid fa-pen"></i></button>`:''}
         <button class="tbl-action" onclick="verHoleriteFolha('${f.id}')" title="Holerite"><i class="fa-solid fa-file-invoice"></i></button>
         <button class="tbl-action" onclick="delFolhaHist('${f.id}')" title="Remover"><i class="fa-solid fa-trash-can"></i></button>
       </td>
@@ -6373,6 +6414,177 @@ function salvarVtVr(who){
   const key='vtvr_'+who+'_'+mes;
   try{localStorage.setItem(key,JSON.stringify({vt_dia:vt,vr_dia:vr,dias,total_vt:vt*dias,total_vr:vr*dias}));}catch(_){}
   toast('VT/VR salvo! Use ao abrir a Folha do mês '+mes,'fa-floppy-disk');
+}
+
+// ══ FOLHA DE PONTO ════════════════════════════════════════════════════════════
+let _pontoHoje = [];
+let _pontoAll  = [];
+let _pontoTipoAtivo = null;
+
+const PONTO_TIPOS = [
+  { key:'chegada',         label:'Chegada',        icon:'fa-right-to-bracket', cor:'var(--ok)' },
+  { key:'saida_almoco',    label:'Saída Almoço',   icon:'fa-utensils',         cor:'var(--wa)' },
+  { key:'retorno_almoco',  label:'Retorno Almoço', icon:'fa-rotate-left',      cor:'var(--wa)' },
+  { key:'saida',           label:'Saída',          icon:'fa-right-from-bracket',cor:'var(--er)' },
+];
+
+async function loadPonto(){
+  const hoje = new Date().toISOString().slice(0,10);
+  const lbl = document.getElementById('ponto-data-label');
+  if(lbl) lbl.textContent = new Date().toLocaleDateString('pt-BR');
+
+  try{
+    const r = await fetch(`/api/ponto?data=${hoje}&meu=true`,{credentials:'include'});
+    const d = await r.json();
+    if(d.ok) _pontoHoje = d.data||[];
+  }catch(e){console.warn('[loadPonto]',e);}
+  renderPontoMarcadores();
+
+  const isAdmin = S.currentUser?.role==='admin';
+  const sec = document.getElementById('ponto-admin-secao');
+  if(sec) sec.style.display = isAdmin ? '' : 'none';
+  if(isAdmin){
+    const flt = document.getElementById('ponto-flt-data');
+    if(flt && !flt.value) flt.value = hoje;
+    await loadPontoAdmin();
+  }
+}
+
+async function loadPontoAdmin(){
+  const data = document.getElementById('ponto-flt-data')?.value || new Date().toISOString().slice(0,10);
+  try{
+    const r = await fetch(`/api/ponto?data=${data}`,{credentials:'include'});
+    const d = await r.json();
+    if(d.ok) _pontoAll = d.data||[];
+  }catch(e){console.warn('[loadPontoAdmin]',e);}
+  renderPontoTabela();
+}
+
+function renderPontoMarcadores(){
+  const wrap = document.getElementById('ponto-marcadores');
+  if(!wrap) return;
+  const isAdmin = S.currentUser?.role==='admin';
+  wrap.innerHTML = PONTO_TIPOS.map(t=>{
+    const reg = _pontoHoje.find(r=>r.tipo===t.key);
+    const feito = !!reg;
+    const horaStr = feito ? reg.hora.slice(0,5) : '—';
+    const temFoto = feito && reg.foto_path;
+    return`<div style="background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center">
+      <i class="fa-solid ${t.icon}" style="font-size:22px;color:${feito?t.cor:'var(--mu)'};margin-bottom:8px;display:block"></i>
+      <div style="font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${t.label}</div>
+      <div style="font-size:22px;font-weight:700;color:${feito?'var(--ink)':'var(--mu)'};margin-bottom:10px">${horaStr}</div>
+      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+        <button class="btn-sec" style="font-size:12px;padding:5px 12px" onclick="pontoAbrirCamera('${t.key}')">
+          <i class="fa-solid fa-camera"></i>${feito?' Refazer':' Registrar'}
+        </button>
+        ${temFoto&&isAdmin?`<button class="btn-sec" style="font-size:12px;padding:5px 10px" onclick="verFotoPonto('${reg.foto_path}')"><i class="fa-solid fa-image"></i></button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderPontoTabela(){
+  const tbody = document.getElementById('tbody-ponto');
+  if(!tbody) return;
+  if(!_pontoAll.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--mu);padding:24px">Nenhum registro para esta data.</td></tr>';
+    return;
+  }
+  // Agrupa por usuário
+  const byUser = {};
+  for(const r of _pontoAll){
+    if(!byUser[r.usuario_id]) byUser[r.usuario_id]={nome:r.usuario_nome,regs:{}};
+    byUser[r.usuario_id].regs[r.tipo]=r;
+  }
+  tbody.innerHTML=Object.values(byUser).map(u=>`
+    <tr>
+      <td><strong>${u.nome||'—'}</strong></td>
+      ${PONTO_TIPOS.map(t=>{
+        const r=u.regs[t.key];
+        if(!r) return`<td style="color:var(--mu)">—</td>`;
+        const temFoto=!!r.foto_path;
+        return`<td>${r.hora.slice(0,5)} ${temFoto?`<button class="tbl-action" onclick="verFotoPonto('${r.foto_path}')" title="Ver foto"><i class="fa-solid fa-image" style="font-size:11px"></i></button>`:'📷'}</td>`;
+      }).join('')}
+    </tr>`).join('');
+}
+
+function pontoAbrirCamera(tipo){
+  _pontoTipoAtivo = tipo;
+  const inp = document.getElementById('ponto-camera');
+  if(inp){ inp.value=''; inp.click(); }
+}
+
+async function compressImagePonto(file){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1080;
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+        const canvas=document.createElement('canvas');
+        canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        canvas.toBlob(resolve,'image/jpeg',0.75);
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function pontoCameraCapture(event){
+  const file=event.target.files[0];
+  if(!file||!_pontoTipoAtivo) return;
+  const tipo=_pontoTipoAtivo;
+  _pontoTipoAtivo=null;
+  event.target.value='';
+
+  toast('Comprimindo imagem...','fa-image');
+  let blob;
+  try{ blob=await compressImagePonto(file); }
+  catch(e){ toast('Erro ao processar imagem','fa-triangle-exclamation'); return; }
+
+  const hoje=new Date().toISOString().slice(0,10);
+  const hora=new Date().toTimeString().slice(0,8);
+
+  // 1. Upload da foto
+  let fotoPath=null;
+  try{
+    toast('Enviando foto...','fa-upload');
+    const r=await fetch(`/api/ponto/foto?tipo=${tipo}&data=${hoje}`,{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'image/jpeg'},body:blob,
+    });
+    const d=await r.json();
+    if(d.ok) fotoPath=d.path;
+    else console.warn('Foto não enviada:',d.msg);
+  }catch(e){ console.warn('Foto não enviada:',e); }
+
+  // 2. Salva registro (mesmo sem foto)
+  try{
+    const r=await fetch('/api/ponto/registro',{
+      method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({data:hoje,tipo,hora,foto_path:fotoPath}),
+    });
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg||'Erro');
+  }catch(e){ toast('Erro ao salvar: '+e.message,'fa-triangle-exclamation'); return; }
+
+  toast('Ponto registrado!','fa-check');
+  await loadPonto();
+}
+
+async function verFotoPonto(fotoPath){
+  try{
+    const r=await fetch(`/api/ponto/foto-url?path=${encodeURIComponent(fotoPath)}`,{credentials:'include'});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg);
+    const img=document.getElementById('ponto-foto-img');
+    if(img){ img.src=d.url; openModal('modal-ponto-foto'); }
+  }catch(e){ toast('Erro ao carregar foto: '+e.message,'fa-triangle-exclamation'); }
 }
 
 </script>
