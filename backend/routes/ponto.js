@@ -1,5 +1,5 @@
 const express    = require('express');
-const { createClient } = require('@supabase/supabase-js');
+const { StorageClient } = require('@supabase/storage-js');
 const { getSupabase }  = require('../lib/supabase');
 const { authenticateToken, authorize } = require('../middleware/auth');
 
@@ -8,7 +8,10 @@ const BUCKET = 'ponto-fotos';
 const TIPOS  = ['chegada', 'saida_almoco', 'retorno_almoco', 'saida'];
 
 function storage() {
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+  return new StorageClient(`${process.env.SUPABASE_URL}/storage/v1`, {
+    apikey:        process.env.SUPABASE_SERVICE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}`,
+  });
 }
 
 // POST /api/ponto/foto?tipo=chegada&data=YYYY-MM-DD
@@ -27,8 +30,7 @@ router.post(
 
       const sb       = storage();
       const filePath = `${req.user.id}/${data.slice(0, 7)}/${data}_${tipo}.jpg`;
-      const { error } = await sb.storage
-        .from(BUCKET)
+      const { error } = await sb.from(BUCKET)
         .upload(filePath, req.body, { contentType: 'image/jpeg', upsert: true });
       if (error) throw new Error(error.message);
 
@@ -48,11 +50,14 @@ router.post('/registro', authenticateToken, async (req, res) => {
       return res.status(400).json({ ok: false, msg: 'data, tipo e hora obrigatórios' });
 
     const db = getSupabase();
-    const { error } = await db.from('folha_ponto').upsert(
-      { usuario_id: req.user.id, data, tipo, hora, foto_path: foto_path || null },
-      { onConflict: 'usuario_id,data,tipo' }
+    const { error } = await db.from('folha_ponto').insert(
+      { usuario_id: req.user.id, data, tipo, hora, foto_path: foto_path || null }
     );
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === '23505') // unique constraint — já registrado
+        return res.status(409).json({ ok: false, msg: 'Ponto já registrado para este tipo neste dia.' });
+      throw new Error(error.message);
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error('[ponto/registro POST]', err.message);
@@ -60,15 +65,24 @@ router.post('/registro', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/ponto?data=YYYY-MM-DD[&meu=true]
-// Admin sem meu=true → todos os usuários; caso contrário → só o próprio
+// GET /api/ponto?data=YYYY-MM-DD[&meu=true]  — dia específico
+// GET /api/ponto?mes=YYYY-MM[&meu=true]      — mês completo (banco de horas)
+// Admin sem meu=true → todos; caso contrário → só o próprio
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { data, meu } = req.query;
+    const { data, mes, meu } = req.query;
     const db = getSupabase();
 
-    let q = db.from('folha_ponto').select('*').order('hora', { ascending: true });
-    if (data) q = q.eq('data', data);
+    let q = db.from('folha_ponto').select('*')
+      .order('data', { ascending: true })
+      .order('hora', { ascending: true });
+    if (data) {
+      q = q.eq('data', data);
+    } else if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      const [y, m] = mes.split('-').map(Number);
+      const nextMes = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+      q = q.gte('data', `${mes}-01`).lt('data', `${nextMes}-01`);
+    }
     if (req.user.role !== 'admin' || meu === 'true') q = q.eq('usuario_id', req.user.id);
 
     const [pRes, uRes] = await Promise.all([q, db.from('rubi_users').select('id, nome')]);
@@ -90,7 +104,7 @@ router.get('/foto-url', authenticateToken, authorize('admin'), async (req, res) 
     if (!fp) return res.status(400).json({ ok: false, msg: 'path obrigatório' });
 
     const sb = storage();
-    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(fp, 3600);
+    const { data, error } = await sb.from(BUCKET).createSignedUrl(fp, 3600);
     if (error) throw new Error(error.message);
     res.json({ ok: true, url: data.signedUrl });
   } catch (err) {

@@ -1755,6 +1755,22 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
           <input type="file" id="ponto-camera" accept="image/*" capture="user" style="display:none" onchange="pontoCameraCapture(event)">
         </div>
 
+        <!-- Banco de Horas -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-ttl"><i class="fa-solid fa-clock-rotate-left"></i>Banco de Horas</div>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+            <input type="month" id="ponto-bh-mes" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);color:var(--ink);font-size:13px">
+            <button class="btn-sec" onclick="loadBancoHoras()"><i class="fa-solid fa-magnifying-glass"></i> Ver</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="tbl">
+              <thead id="thead-bh"></thead>
+              <tbody id="tbody-bh"></tbody>
+            </table>
+          </div>
+          <div id="bh-total" style="text-align:right;font-size:13px;color:var(--mu);margin-top:10px;font-weight:600"></div>
+        </div>
+
         <!-- Painel admin: todos os registros -->
         <div id="ponto-admin-secao" style="display:none">
           <div class="card">
@@ -6480,6 +6496,7 @@ const PONTO_TIPOS = [
 
 async function loadPonto(){
   const hoje = new Date().toISOString().slice(0,10);
+  const mesAtual = hoje.slice(0,7);
   const lbl = document.getElementById('ponto-data-label');
   if(lbl) lbl.textContent = new Date().toLocaleDateString('pt-BR');
 
@@ -6490,6 +6507,10 @@ async function loadPonto(){
   }catch(e){console.warn('[loadPonto]',e);}
   renderPontoMarcadores();
 
+  const bhMes = document.getElementById('ponto-bh-mes');
+  if(bhMes && !bhMes.value) bhMes.value = mesAtual;
+  await loadBancoHoras();
+
   const isAdmin = S.currentUser?.role==='admin';
   const sec = document.getElementById('ponto-admin-secao');
   if(sec) sec.style.display = isAdmin ? '' : 'none';
@@ -6497,6 +6518,77 @@ async function loadPonto(){
     const flt = document.getElementById('ponto-flt-data');
     if(flt && !flt.value) flt.value = hoje;
     await loadPontoAdmin();
+  }
+}
+
+let _bhData = [];
+
+async function loadBancoHoras(){
+  const mes = document.getElementById('ponto-bh-mes')?.value;
+  if(!mes) return;
+  const isAdmin = S.currentUser?.role==='admin';
+  const url = `/api/ponto?mes=${mes}${isAdmin?'':'&meu=true'}`;
+  try{
+    const r = await fetch(url,{credentials:'include'});
+    const d = await r.json();
+    if(d.ok) _bhData = d.data||[];
+  }catch(e){console.warn('[loadBancoHoras]',e);}
+  renderBancoHoras();
+}
+
+function _bhToMin(t){ const[h,m]=t.slice(0,5).split(':').map(Number); return h*60+m; }
+
+function calcMinTrabalhados(regs){
+  const g = tipo => regs.find(r=>r.tipo===tipo)?.hora;
+  const ch=g('chegada'), sa=g('saida');
+  if(!ch||!sa) return null;
+  let total = _bhToMin(sa)-_bhToMin(ch);
+  const salm=g('saida_almoco'), ralm=g('retorno_almoco');
+  if(salm&&ralm) total -= (_bhToMin(ralm)-_bhToMin(salm));
+  return total>=0 ? total : null;
+}
+
+function renderBancoHoras(){
+  const thead=document.getElementById('thead-bh');
+  const tbody=document.getElementById('tbody-bh');
+  const totalEl=document.getElementById('bh-total');
+  if(!thead||!tbody) return;
+  const isAdmin=S.currentUser?.role==='admin';
+  const cols = isAdmin ? 7 : 6;
+
+  thead.innerHTML = isAdmin
+    ? '<tr><th>Data</th><th>Colaborador</th><th>Chegada</th><th>Saída Almoço</th><th>Retorno</th><th>Saída</th><th>Horas</th></tr>'
+    : '<tr><th>Data</th><th>Chegada</th><th>Saída Almoço</th><th>Retorno</th><th>Saída</th><th>Horas</th></tr>';
+
+  if(!_bhData.length){
+    tbody.innerHTML=`<tr><td colspan="${cols}" style="text-align:center;color:var(--mu);padding:24px">Nenhum registro neste mês.</td></tr>`;
+    if(totalEl) totalEl.textContent='';
+    return;
+  }
+
+  const byKey={};
+  for(const r of _bhData){
+    const k=`${r.data}__${r.usuario_id}`;
+    if(!byKey[k]) byKey[k]={data:r.data,nome:r.usuario_nome,regs:[]};
+    byKey[k].regs.push(r);
+  }
+
+  const gt=(regs,tipo)=>regs.find(r=>r.tipo===tipo)?.hora?.slice(0,5)||'—';
+  let totalMin=0;
+
+  tbody.innerHTML=Object.values(byKey).map(g=>{
+    const mins=calcMinTrabalhados(g.regs);
+    if(mins!==null) totalMin+=mins;
+    const hs=mins!==null?`${Math.floor(mins/60)}h${String(mins%60).padStart(2,'0')}`:'—';
+    const dt=g.data.split('-').reverse().join('/');
+    return isAdmin
+      ? `<tr><td>${dt}</td><td>${g.nome||'—'}</td><td>${gt(g.regs,'chegada')}</td><td>${gt(g.regs,'saida_almoco')}</td><td>${gt(g.regs,'retorno_almoco')}</td><td>${gt(g.regs,'saida')}</td><td><strong>${hs}</strong></td></tr>`
+      : `<tr><td>${dt}</td><td>${gt(g.regs,'chegada')}</td><td>${gt(g.regs,'saida_almoco')}</td><td>${gt(g.regs,'retorno_almoco')}</td><td>${gt(g.regs,'saida')}</td><td><strong>${hs}</strong></td></tr>`;
+  }).join('');
+
+  if(totalEl){
+    const th=`${Math.floor(totalMin/60)}h${String(totalMin%60).padStart(2,'0')}`;
+    totalEl.innerHTML=`Total do mês: <strong>${th}</strong>`;
   }
 }
 
@@ -6524,9 +6616,10 @@ function renderPontoMarcadores(){
       <div style="font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${t.label}</div>
       <div style="font-size:22px;font-weight:700;color:${feito?'var(--ink)':'var(--mu)'};margin-bottom:10px">${horaStr}</div>
       <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
-        <button class="btn-sec" style="font-size:12px;padding:5px 12px" onclick="pontoAbrirCamera('${t.key}')">
-          <i class="fa-solid fa-camera"></i>${feito?' Refazer':' Registrar'}
-        </button>
+        ${feito
+          ? `<span style="font-size:12px;color:var(--mu);padding:5px 12px;display:inline-flex;align-items:center;gap:6px"><i class="fa-solid fa-lock"></i>Registrado</span>`
+          : `<button class="btn-sec" style="font-size:12px;padding:5px 12px" onclick="pontoAbrirCamera('${t.key}')"><i class="fa-solid fa-camera"></i> Registrar</button>`
+        }
         ${temFoto&&isAdmin?`<button class="btn-sec" style="font-size:12px;padding:5px 10px" onclick="verFotoPonto('${reg.foto_path}')"><i class="fa-solid fa-image"></i></button>`:''}
       </div>
     </div>`;
