@@ -2494,6 +2494,8 @@ async function bootApp() {
   const _landPage=PERMS[u.role]?.[0]||'dashboard';
   const _landBtn=_landPage==='dashboard'?document.querySelector('.nb.active'):document.getElementById('nb-'+_landPage);
   nav(_landPage,_landBtn||document.querySelector('.nb'));
+  // Sync silencioso de clientes do Tiny (background, sem bloquear)
+  sincronizarClientesTinyBackground();
   // Checagem horária de vencimentos
   setInterval(notificarVencimentos, 60*60*1000);
   // Carrega dashboard Tiny em background (pesado — não bloqueia a entrada)
@@ -3059,6 +3061,35 @@ async function sincronizarClientesTiny(){
   }finally{
     setBtns('<i class="fa-solid fa-rotate"></i> Sincronizar',false);
   }
+}
+
+async function sincronizarClientesTinyBackground(){
+  try{
+    const resp=await fetch('/api/tiny/clientes?paginas=24',{credentials:'include'});
+    if(!resp.ok)return;
+    const r=await resp.json();
+    if(!r.ok||!r.data?.length)return;
+    let novos=0;
+    for(const tc of r.data){
+      const existe=S.clientes.find(c=>c.nome&&c.nome.toLowerCase()===tc.nome.toLowerCase());
+      if(existe){
+        if(!existe.telefone)existe.telefone=tc.celular||tc.fone||'';
+        if(!existe.email&&tc.email)existe.email=tc.email;
+        existe.id_tiny=tc.id_tiny;
+      }else{
+        S.clientes.push({
+          id:'cli_tiny_'+tc.id_tiny,nome:tc.nome,fantasia:tc.fantasia||'',
+          tipo:tc.tipo_pessoa==='F'?'Consumidor Final':'Salão',
+          telefone:tc.celular||tc.fone||'',email:tc.email||'',
+          cpf:'',endereco:tc.cidade+(tc.uf?' - '+tc.uf:''),
+          obs:'Importado do Tiny ERP',ativo:tc.situacao==='ativo',
+          criadoEm:new Date().toISOString(),id_tiny:tc.id_tiny,
+        });
+        novos++;
+      }
+    }
+    if(novos>0){saveLocalData();renderClients();}
+  }catch{}
 }
 
 /* ======================================
