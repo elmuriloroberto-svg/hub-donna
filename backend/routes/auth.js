@@ -86,6 +86,46 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// PUT /api/auth/password — troca a própria senha (qualquer usuário autenticado)
+router.put('/password', authenticateToken, async (req, res) => {
+  try {
+    const senha_atual = sanitizeStr(req.body.senha_atual, 128);
+    const nova_senha  = sanitizeStr(req.body.nova_senha,  128);
+
+    if (!senha_atual || !nova_senha)
+      return res.status(400).json({ ok: false, msg: 'Senha atual e nova senha são obrigatórias' });
+    if (nova_senha.length < 8)
+      return res.status(400).json({ ok: false, msg: 'Nova senha deve ter no mínimo 8 caracteres' });
+
+    const sb = getSupabase();
+    const { data: users } = await sb
+      .from('rubi_users')
+      .select('id, password_hash')
+      .eq('id', req.user.id)
+      .limit(1);
+
+    const user = users?.[0];
+    if (!user) return res.status(404).json({ ok: false, msg: 'Usuário não encontrado' });
+
+    const senhaCorreta = await bcrypt.compare(senha_atual, user.password_hash);
+    if (!senhaCorreta)
+      return res.status(401).json({ ok: false, msg: 'Senha atual incorreta' });
+
+    const password_hash = await bcrypt.hash(nova_senha, 10);
+    const { error } = await sb
+      .from('rubi_users')
+      .update({ password_hash })
+      .eq('id', req.user.id);
+
+    if (error) throw new Error(error.message);
+
+    res.json({ ok: true, msg: 'Senha alterada com sucesso' });
+  } catch (err) {
+    console.error('[auth/password]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao alterar senha' });
+  }
+});
+
 // GET /api/auth/me — restaura sessão após reload de página
 router.get('/me', authenticateToken, async (req, res) => {
   try {

@@ -13,15 +13,15 @@ router.get('/', authenticateToken, async (req, res) => {
       sb.from('tasks')
         .select('*')
         .order('data_inicio', { ascending: true, nullsFirst: false }),
-      sb.from('rubi_users').select('id, nome, login'),
+      sb.from('rubi_users').select('id, nome, username'),
     ]);
     if (taskRes.error) throw new Error(taskRes.error.message);
 
     const userMap = Object.fromEntries((userRes.data || []).map(u => [u.id, u]));
     const data = (taskRes.data || []).map(t => ({
       ...t,
-      collab_nome:        userMap[t.collab_id]?.nome  || '',
-      collab_login:       userMap[t.collab_id]?.login || '',
+      collab_nome:        userMap[t.collab_id]?.nome     || '',
+      collab_login:       userMap[t.collab_id]?.username || '',
       delegado_por_nome:  userMap[t.delegado_por_id]?.nome || '',
     }));
     res.json({ ok: true, data });
@@ -52,7 +52,7 @@ router.post('/', authenticateToken, async (req, res) => {
       collabIds = [collab_id];
     } else if (collab_login) {
       const { data: u } = await sb
-        .from('rubi_users').select('id').eq('login', collab_login).maybeSingle();
+        .from('rubi_users').select('id').eq('username', collab_login).maybeSingle();
       if (!u) return res.status(400).json({ ok: false, msg: `Colaborador "${collab_login}" não encontrado` });
       collabIds = [u.id];
     } else {

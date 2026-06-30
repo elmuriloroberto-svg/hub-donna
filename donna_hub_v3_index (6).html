@@ -727,6 +727,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <div class="sync-ind" id="sync-status"><i class="fa-solid fa-circle" style="font-size:7px;color:var(--ok)"></i>Conectado</div>
     </div>
     <div class="sb-foot">
+      <button class="nb" onclick="openModal('modal-minha-senha')" style="color:rgba(255,255,255,.5)"><i class="fa-solid fa-key"></i>Alterar Senha</button>
       <button class="nb" onclick="logout()" style="color:rgba(255,255,255,.3)"><i class="fa-solid fa-right-from-bracket"></i>Sair</button>
     </div>
   </div>
@@ -2127,6 +2128,22 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
   </div>
 </div>
 
+<!-- Modal: alterar minha senha -->
+<div class="modal-overlay" id="modal-minha-senha" onclick="if(event.target===this)closeModal('modal-minha-senha')">
+  <div class="modal-box" style="max-width:380px;width:95vw">
+    <div class="mhd"><span>Alterar Minha Senha</span><button class="mhx" onclick="closeModal('modal-minha-senha')">×</button></div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+      <div class="mfg"><label>Senha Atual</label><input type="password" id="ms-atual" placeholder="Senha atual" autocomplete="current-password"></div>
+      <div class="mfg"><label>Nova Senha</label><input type="password" id="ms-nova" placeholder="Mínimo 8 caracteres" autocomplete="new-password"></div>
+      <div class="mfg"><label>Confirmar Nova Senha</label><input type="password" id="ms-conf" placeholder="Repita a nova senha" autocomplete="new-password"></div>
+    </div>
+    <div class="mft">
+      <button class="btn-can" onclick="closeModal('modal-minha-senha')">Cancelar</button>
+      <button class="btn-prim" onclick="alterarMinhaSenha()"><i class="fa-solid fa-key"></i>Alterar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"><i class="fa-solid fa-check-circle" id="toast-ic"></i><span id="toast-msg">OK</span></div>
 <script>
 // +======================================================+
@@ -2403,6 +2420,24 @@ async function logout(){
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('inp-pass').value='';
   document.getElementById('login-err').style.display='none';
+}
+async function alterarMinhaSenha(){
+  const atual=document.getElementById('ms-atual').value;
+  const nova=document.getElementById('ms-nova').value;
+  const conf=document.getElementById('ms-conf').value;
+  if(!atual||!nova||!conf){toast('Preencha todos os campos','fa-triangle-exclamation');return;}
+  if(nova.length<8){toast('Nova senha deve ter no mínimo 8 caracteres','fa-triangle-exclamation');return;}
+  if(nova!==conf){toast('As novas senhas não coincidem','fa-triangle-exclamation');return;}
+  try{
+    const r=await fetch('/api/auth/password',{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha_atual:atual,nova_senha:nova})});
+    const d=await r.json();
+    if(!d.ok){toast(d.msg||'Erro ao alterar senha','fa-triangle-exclamation');return;}
+    closeModal('modal-minha-senha');
+    document.getElementById('ms-atual').value='';
+    document.getElementById('ms-nova').value='';
+    document.getElementById('ms-conf').value='';
+    toast('Senha alterada com sucesso!','fa-key');
+  }catch(e){toast('Erro: '+e.message,'fa-triangle-exclamation');}
 }
 function handleExpiredSession(){
   toast('Sessão expirada. Faça login novamente.','fa-clock');

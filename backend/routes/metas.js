@@ -136,15 +136,15 @@ router.get('/', authenticateToken, async (req, res) => {
     const sb = getSupabase();
     const [metaRes, userRes] = await Promise.all([
       sb.from('metas').select('*').order('mes', { ascending: false }),
-      sb.from('rubi_users').select('id, nome, login'),
+      sb.from('rubi_users').select('id, nome, username'),
     ]);
     if (metaRes.error) throw new Error(metaRes.error.message);
 
     const userMap = Object.fromEntries((userRes.data || []).map((u) => [u.id, u]));
     const data = (metaRes.data || []).map((m) => ({
       ...m,
-      colaborador_nome:  userMap[m.colaborador_id]?.nome  || m.collab_login || '',
-      colaborador_login: userMap[m.colaborador_id]?.login || m.collab_login || '',
+      colaborador_nome:  userMap[m.colaborador_id]?.nome     || m.collab_login || '',
+      colaborador_login: userMap[m.colaborador_id]?.username || m.collab_login || '',
     }));
     res.json({ ok: true, data });
   } catch (err) {
@@ -166,10 +166,10 @@ router.post('/', authenticateToken, authorize('admin', 'gerente'), async (req, r
 
     if (!collabId && collab_login) {
       const { data: u } = await sb
-        .from('rubi_users').select('id, login').eq('login', collab_login).maybeSingle();
+        .from('rubi_users').select('id, username').eq('username', collab_login).maybeSingle();
       if (!u) return res.status(400).json({ ok: false, msg: `Colaborador "${collab_login}" não encontrado` });
       collabId = u.id;
-      login    = u.login;
+      login    = u.username;
     }
     if (!collabId) return res.status(400).json({ ok: false, msg: 'Colaborador obrigatório' });
 
