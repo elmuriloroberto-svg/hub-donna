@@ -2487,7 +2487,7 @@ async function bootApp() {
   const _de=document.getElementById('tiny-de');const _ate=document.getElementById('tiny-ate');
   if(_de&&!_de.value)_de.value=_fmt(_tinyDe);if(_ate&&!_ate.value)_ate.value=_fmt(_tinyAte);
   // Dados locais rápidos (localStorage) — não bloqueiam
-  await Promise.all([loadBoletos(),loadEntregas(),loadTasks(),loadMetas(),loadFolha(),loadProcessos(),loadUsers(),loadClients(),loadCollabSelects()]);
+  await Promise.all([loadBoletos(),loadRecebiveis(),loadEntregas(),loadTasks(),loadMetas(),loadFolha(),loadProcessos(),loadUsers(),loadClients(),loadCollabSelects()]);
   // Mostra o app imediatamente — não espera o Tiny (pode levar 5-30s)
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app-screen').style.display='block';
@@ -2571,6 +2571,7 @@ function nav(page,el){
   if(page==='vtvr')calcVtVr('gab'),calcVtVr('mur');
   if(page==='entregas')loadEntregas();
   if(page==='boletos')loadBoletos();
+  if(page==='recebiveis')loadRecebiveis();
   if(page==='usuarios')loadUsers();
 }
 
@@ -2579,7 +2580,7 @@ async function syncAll(){
   const icon=document.getElementById('sync-btn-icon');icon.classList.add('fa-spin');
   setSyncStatus('wa','Sincronizando...');
   try{
-    await Promise.all([loadDashboard(),loadBoletos(),loadEntregas(),loadTasks(),loadMetas(),loadFolha(),loadProcessos()]);
+    await Promise.all([loadDashboard(),loadBoletos(),loadRecebiveis(),loadEntregas(),loadTasks(),loadMetas(),loadFolha(),loadProcessos()]);
     setSyncStatus('ok','Sincronizado');
     toast('Dados sincronizados!','fa-rotate');
   }catch(e){
@@ -4337,7 +4338,7 @@ async function loadRecebiveis(){
     const r=await fetch('/api/boletos/receber',{credentials:'include'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const d=await r.json();
-    if(d.ok){S.boletos_r=d.data||[];dbSet('boletos_r',S.boletos_r);}
+    if(d.ok)S.boletos_venda=d.data||[];
   }catch(e){console.warn('[loadRecebiveis]',e.message);}
   renderBoletoVenda();
 }
