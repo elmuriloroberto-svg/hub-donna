@@ -36,7 +36,7 @@ router.get('/', authenticateToken, async (req, res) => {
 // Accepts collab_id (UUID) or collab_login (string) — backend resolves UUID
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { titulo, descricao, emoji, collab_id, collab_login, data_inicio, data_fim, prio, para_todos } = req.body;
+    const { titulo, descricao, emoji, collab_id, collab_login, data_inicio, data_fim, prio, para_todos, tipo } = req.body;
     if (!titulo) return res.status(400).json({ ok: false, msg: 'Título obrigatório' });
 
     const sb = getSupabase();
@@ -68,6 +68,7 @@ router.post('/', authenticateToken, async (req, res) => {
       data_fim:        data_fim    || null,
       prio:            prio        || 'media',
       para_todos:      !!para_todos,
+      tipo:            tipo === 'acao' ? 'acao' : 'tarefa',
       done:            false,
       delegado_por_id: req.user.id,
     }));

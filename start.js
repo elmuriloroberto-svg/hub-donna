@@ -565,6 +565,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/api/tiny/dia') {
+    const dataDia = urlObj.searchParams.get('data') || '';
+    if (!dataDia) { json(400, { ok: false, msg: 'Parâmetro data obrigatório (DD/MM/YYYY)' }); return; }
+    try {
+      const todos = await fetchAllOrders({ dataInicial: dataDia, dataFinal: dataDia }, 5);
+      const total = todos.reduce((s, p) => s + (parseFloat(p.valor) || 0), 0);
+      json(200, { ok: true, data: dataDia, qtd: todos.length, total, pedidos: todos.map(p => ({ numero: p.numero, cliente: p.nome || '', vendedor: p.nome_vendedor || '', valor: parseFloat(p.valor) || 0, situacao: p.situacao || '' })) });
+    }
+    catch(e) { json(500, { ok: false, msg: e.message }); }
+    return;
+  }
+
   if (pathname === '/api/tiny/vendas') {
     const de = urlObj.searchParams.get('de') || '';
     const maxPags = parseInt(urlObj.searchParams.get('paginas') || '3');

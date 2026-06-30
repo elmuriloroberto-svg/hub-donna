@@ -91,6 +91,54 @@ router.post('/', authenticateToken, authorize('admin', 'gerente'), async (req, r
   }
 });
 
+// PUT /api/folha/:id — update payroll record
+router.put('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isUUID(id)) return res.status(400).json({ ok: false, msg: 'ID inválido' });
+
+    const {
+      mes, tipo,
+      dias_uteis, faltas, dias_trabalhados,
+      salario_base, comissao, bonus, descontos,
+      vt, vr, adiantamento,
+      meta_valor, meta_realizado, fgts,
+      total_liquido, obs,
+    } = req.body;
+
+    const update = {};
+    if (mes              !== undefined) update.mes              = mes;
+    if (tipo             !== undefined) update.tipo             = tipo;
+    if (dias_uteis       !== undefined) update.dias_uteis       = parseInt(dias_uteis)       || 0;
+    if (faltas           !== undefined) update.faltas           = parseInt(faltas)            || 0;
+    if (dias_trabalhados !== undefined) update.dias_trabalhados = parseInt(dias_trabalhados)  || 0;
+    if (salario_base     !== undefined) update.salario_base     = parseFloat(salario_base)    || 0;
+    if (comissao         !== undefined) update.comissao         = parseFloat(comissao)        || 0;
+    if (bonus            !== undefined) update.bonus            = parseFloat(bonus)           || 0;
+    if (descontos        !== undefined) update.descontos        = parseFloat(descontos)       || 0;
+    if (vt               !== undefined) update.vt               = parseFloat(vt)              || 0;
+    if (vr               !== undefined) update.vr               = parseFloat(vr)              || 0;
+    if (adiantamento     !== undefined) update.adiantamento     = parseFloat(adiantamento)    || 0;
+    if (meta_valor       !== undefined) update.meta_valor       = parseFloat(meta_valor)      || 0;
+    if (meta_realizado   !== undefined) update.meta_realizado   = parseFloat(meta_realizado)  || 0;
+    if (fgts             !== undefined) update.fgts             = parseFloat(fgts)            || 0;
+    if (total_liquido    !== undefined) update.total_liquido    = parseFloat(total_liquido)   || 0;
+    if (obs              !== undefined) update.obs              = obs;
+
+    if (!Object.keys(update).length)
+      return res.status(400).json({ ok: false, msg: 'Nenhum campo para atualizar' });
+
+    const sb = getSupabase();
+    const { error } = await sb.from('folha').update(update).eq('id', id);
+    if (error) throw new Error(error.message);
+
+    res.json({ ok: true, msg: 'Folha atualizada' });
+  } catch (err) {
+    console.error('[folha PUT]', err.message);
+    res.status(500).json({ ok: false, msg: 'Erro ao atualizar folha' });
+  }
+});
+
 // DELETE /api/folha/:id
 router.delete('/:id', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
