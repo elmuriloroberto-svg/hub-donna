@@ -4332,6 +4332,16 @@ async function loadBoletos(){
   initBoletoMesSelect();
 }
 
+async function loadRecebiveis(){
+  try{
+    const r=await fetch('/api/boletos/receber',{credentials:'include'});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    if(d.ok){S.boletos_r=d.data||[];dbSet('boletos_r',S.boletos_r);}
+  }catch(e){console.warn('[loadRecebiveis]',e.message);}
+  renderBoletoVenda();
+}
+
 function fmtMesLabel(mes){
   const[y,m]=mes.split('-');
   const L=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
