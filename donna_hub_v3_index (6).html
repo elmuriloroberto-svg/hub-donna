@@ -693,32 +693,18 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <div><div class="un" id="u-nm">Admin</div><div class="ur" id="u-rl">Administrador</div></div>
     </div>
     <nav class="sb-nav">
-      <!-- VENDAS & CRM -->
-      <div class="ng-hd"><i class="fa-solid fa-chart-line"></i>Vendas &amp; CRM</div>
       <button class="nb active" onclick="nav('dashboard',this)"><i class="fa-solid fa-chart-pie"></i>Dashboard</button>
       <button class="nb" onclick="nav('clientes',this)" id="nb-clientes"><i class="fa-solid fa-address-book"></i>Clientes</button>
       <button class="nb" onclick="nav('crm',this)" id="nb-crm"><i class="fa-solid fa-fire-flame-curved"></i>CRM de Clientes</button>
       <button class="nb" onclick="nav('tiny',this)" id="nb-tiny"><i class="fa-solid fa-boxes-stacked"></i>Pedidos Inteligentes</button>
-      <div class="ng-div"></div>
-      <!-- OPERACIONAL -->
-      <div class="ng-hd"><i class="fa-solid fa-gears"></i>Operacional</div>
       <button class="nb" onclick="nav('calculadora',this)" id="nb-calculadora"><i class="fa-solid fa-calculator"></i>Calculadora &amp; Etiquetas</button>
       <button class="nb" onclick="nav('entregas',this)" id="nb-entregas"><i class="fa-solid fa-motorcycle"></i>Controle de Entregas</button>
-      <div class="ng-div"></div>
-      <!-- FINANCEIRO -->
-      <div class="ng-hd"><i class="fa-solid fa-landmark"></i>Financeiro</div>
       <button class="nb" onclick="nav('boletos',this)" id="nb-boletos"><i class="fa-solid fa-file-invoice-dollar"></i>Contas a Pagar<span class="badge" id="badge-boletos" style="display:none">0</span></button>
       <button class="nb" onclick="nav('recebiveis',this)" id="nb-recebiveis"><i class="fa-solid fa-hand-holding-dollar"></i>Recebíveis</button>
-      <div class="ng-div"></div>
-      <!-- GESTÃO & EQUIPE -->
-      <div class="ng-hd" id="ng-gestao"><i class="fa-solid fa-users-between-lines"></i>Gestão &amp; Equipe</div>
       <button class="nb" onclick="nav('agenda',this)" id="nb-agenda"><i class="fa-solid fa-calendar-check"></i>Calendário<span class="badge" id="badge-agenda" style="display:none">0</span></button>
       <button class="nb" onclick="nav('folha',this)" id="nb-folha"><i class="fa-solid fa-file-invoice-dollar"></i>Folha de Pagamento</button>
       <button class="nb" onclick="nav('metas',this)" id="nb-metas"><i class="fa-solid fa-bullseye"></i>Metas</button>
       <button class="nb" onclick="nav('processos',this)" id="nb-processos"><i class="fa-solid fa-book-open"></i>Processos (Wiki)</button>
-      <div class="ng-div"></div>
-      <!-- ADMINISTRAÇÃO -->
-      <div class="ng-hd" id="ng-admin"><i class="fa-solid fa-shield-halved"></i>Administração</div>
       <button class="nb" onclick="nav('usuarios',this)" id="nb-usuarios"><i class="fa-solid fa-users-gear"></i>Gerenciar Usuários</button>
       <button class="nb" onclick="nav('cultura',this)" id="nb-cultura"><i class="fa-solid fa-seedling"></i>Cultura &amp; IA</button>
       <button class="nb" onclick="nav('donnaIA',this)" id="nb-donnaIA"><i class="fa-solid fa-robot"></i>Donna IA</button>
@@ -2485,9 +2471,9 @@ async function bootApp() {
 function applyRBAC(role) {
   const allowed=PERMS[role];
   document.querySelectorAll('.nb[id]').forEach(el=>{const pg=el.id.replace('nb-','');if(!allowed.includes(pg)){el.classList.add('locked');el.onclick=()=>toast('Acesso restrito ao seu perfil','fa-lock');}});
-  if(role==='vendedor'){['ng-admin','nb-usuarios','nb-processos','nb-metas','nb-folha','nb-vtvr','nb-entregas'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
+  if(role==='vendedor'){['nb-usuarios','nb-processos','nb-metas','nb-folha','nb-vtvr','nb-entregas'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
   if(role==='gerente'){['nb-folha','nb-vtvr','nb-usuarios'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
-  if(role==='colaborador'){document.querySelectorAll('.sb-nav .nb, .sb-nav .ng-hd, .sb-nav .ng-div').forEach(el=>{if(el.id!=='nb-calculadora')el.style.display='none';});}
+  if(role==='colaborador'){document.querySelectorAll('.sb-nav .nb').forEach(el=>{if(el.id!=='nb-calculadora')el.style.display='none';});}
   const isManager=['admin','gerente'].includes(role);
   const apw=document.getElementById('fp-admin-wrap');const fvw=document.getElementById('fp-viewer-wrap');
   if(apw)apw.style.display=isManager?'block':'none';
