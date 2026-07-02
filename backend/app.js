@@ -165,6 +165,25 @@ app.use('/api/dashboard', apiLimiter,  dashboardRoutes);
 app.use('/api/hub',       apiLimiter,  hubRoutes);
 app.use('/api/chat',      apiLimiter,  chatRoutes);
 
+// ── Migração temporária (remover após executar uma vez) ───────────────────────
+app.get('/api/_migrate_dias_validos', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== 'donna2026mig') return res.status(403).json({ ok: false });
+  try {
+    const { Client } = require('pg');
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+    await client.connect();
+    await client.query('ALTER TABLE metas_semanais ADD COLUMN IF NOT EXISTS dias_validos TEXT;');
+    await client.end();
+    res.json({ ok: true, msg: 'dias_validos adicionado' });
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
 // ── Frontend fallback ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../donna_hub_v3_index (6).html'));
