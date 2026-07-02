@@ -643,8 +643,8 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
   #pg-folha .card-hd > div:last-child{display:flex;flex-wrap:wrap;gap:6px;width:100%;}
   #pg-folha .card-hd > div:last-child select{flex:1;min-width:0;min-height:44px;box-sizing:border-box;}
 
-  /* [11] Metas: input type=month cabe na tela */
-  #meta-mes{width:100%;max-width:100%;box-sizing:border-box;}
+  /* [11] Metas: seletor de semana cabe na tela */
+  #meta-semana,#meta-flt-semana{width:100%;max-width:100%;box-sizing:border-box;}
 
   /* [13] Cultura: valores-grid 3 cols → 2 cols */
   .valores-grid{grid-template-columns:repeat(2,1fr)!important;}
@@ -1636,7 +1636,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
             <div class="card-hd"><div class="card-ttl" id="meta-form-ttl"><i class="fa-solid fa-plus"></i>Definir Meta</div></div>
             <div class="card-bd">
               <div class="fld"><label>Colaborador</label><select id="meta-collab"><option value="">Selecione...</option></select></div>
-              <div class="fld"><label>Mês</label><input type="month" id="meta-mes"></div>
+              <div class="fld"><label>Semana</label><input type="week" id="meta-semana"></div>
               <div class="fld"><label>Meta de Vendas (R$)</label><input type="number" id="meta-val" placeholder="0,00" step="0.01"></div>
               <div class="fld"><label>Realizado até agora (R$)</label><input type="number" id="meta-real" placeholder="0,00" step="0.01" value="0"></div>
               <div style="display:flex;gap:8px">
@@ -1646,7 +1646,13 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
             </div>
           </div>
           <div class="card">
-            <div class="card-hd"><div class="card-ttl"><i class="fa-solid fa-chart-line"></i>Performance da Equipe</div></div>
+            <div class="card-hd">
+              <div class="card-ttl"><i class="fa-solid fa-chart-line"></i>Performance da Equipe</div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="week" id="meta-flt-semana" onchange="renderMetas()" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);color:var(--ink)">
+                <button class="btn-sec" style="font-size:12px;padding:5px 10px;white-space:nowrap" onclick="document.getElementById('meta-flt-semana').value='';renderMetas()">Todas</button>
+              </div>
+            </div>
             <div class="card-bd"><div id="metas-list"></div></div>
           </div>
         </div>
@@ -5549,6 +5555,31 @@ async function loadFolha(){
 
 
 let _editingMetaId = null;
+// Converte "YYYY-Www" → segunda-feira daquela semana
+function weekToMonday(weekStr){
+  const[ano,wk]=weekStr.split('-W').map(Number);
+  const jan4=new Date(ano,0,4);
+  const seg1=new Date(jan4);
+  seg1.setDate(jan4.getDate()-((jan4.getDay()||7)-1));
+  const seg=new Date(seg1);
+  seg.setDate(seg1.getDate()+(wk-1)*7);
+  return seg;
+}
+// Converte segunda-feira → "YYYY-Www"
+function dateToWeek(dt){
+  const d=new Date(Date.UTC(dt.getFullYear(),dt.getMonth(),dt.getDate()));
+  d.setUTCDate(d.getUTCDate()+4-(d.getUTCDay()||7));
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  const wk=Math.ceil((((d-yearStart)/86400000)+1)/7);
+  return`${d.getUTCFullYear()}-W${String(wk).padStart(2,'0')}`;
+}
+function weekLabel(weekStr){
+  const seg=weekToMonday(weekStr);
+  const dom=new Date(seg);dom.setDate(seg.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  return`${fmt(seg)} – ${fmt(dom)}`;
+}
+
 async function loadMetas(){
   try{
     const r=await fetch('/api/metas',{credentials:'include'});
@@ -5556,14 +5587,21 @@ async function loadMetas(){
     if(!d.ok)throw new Error(d.msg||'Erro');
     S.metas=d.data||[];
   }catch(e){console.warn('[loadMetas]',e.message);S.metas=S.metas||[];}
+  // Inicializa filtro com semana atual
+  const flt=document.getElementById('meta-flt-semana');
+  if(flt&&!flt.value) flt.value=dateToWeek(new Date());
+  const frm=document.getElementById('meta-semana');
+  if(frm&&!frm.value) frm.value=dateToWeek(new Date());
   renderMetas();
 }
 async function addMeta(){
   const collab=document.getElementById('meta-collab').value;
-  const mes=document.getElementById('meta-mes').value;
+  const semana=document.getElementById('meta-semana').value;
   const val=parseFloat(document.getElementById('meta-val').value)||0;
   const real=parseFloat(document.getElementById('meta-real').value)||0;
-  if(!mes||!val){toast('Preencha mês e meta','fa-triangle-exclamation');return;}
+  if(!semana||!val){toast('Preencha a semana e a meta','fa-triangle-exclamation');return;}
+  // Deriva o mês da segunda-feira da semana selecionada
+  const mes=weekToMonday(semana).toISOString().slice(0,7);
   try{
     let r,d;
     if(_editingMetaId){
@@ -5584,7 +5622,9 @@ function editMeta(id){
   const m=S.metas.find(x=>x.id===id);if(!m)return;
   _editingMetaId=id;
   const cs=document.getElementById('meta-collab');if(cs)cs.value=m.colaborador_login||'';
-  const ms=document.getElementById('meta-mes');if(ms)ms.value=m.mes;
+  // Converte mes (YYYY-MM) → primeira semana do mês para o picker
+  const sw=document.getElementById('meta-semana');
+  if(sw&&m.mes){const[y,mo]=m.mes.split('-').map(Number);sw.value=dateToWeek(new Date(y,mo-1,1));}
   const vs=document.getElementById('meta-val');if(vs)vs.value=m.meta_valor||0;
   const rs=document.getElementById('meta-real');if(rs)rs.value=m.realizado||0;
   const ttl=document.getElementById('meta-form-ttl');if(ttl)ttl.innerHTML='<i class="fa-solid fa-pen"></i>Editar Meta';
@@ -5593,6 +5633,7 @@ function editMeta(id){
 function cancelEditMeta(){
   _editingMetaId=null;
   ['meta-val','meta-real'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const sw=document.getElementById('meta-semana');if(sw)sw.value=dateToWeek(new Date());
   const ttl=document.getElementById('meta-form-ttl');if(ttl)ttl.innerHTML='<i class="fa-solid fa-plus"></i>Definir Meta';
   const cb=document.getElementById('meta-cancel-btn');if(cb)cb.style.display='none';
 }
@@ -5611,8 +5652,17 @@ function renderMetas(){
   const isAdmin=S.currentUser?.role==='admin'||S.currentUser?.role==='gerente';
   const mac=document.getElementById('meta-add-card');if(mac)mac.style.display=isAdmin?'':'none';
   const el=document.getElementById('metas-list');if(!el)return;
-  if(!S.metas.length){el.innerHTML='<div style="text-align:center;padding:28px;color:var(--mu)">Nenhuma meta cadastrada.</div>';return;}
-  el.innerHTML=S.metas.map(m=>{
+
+  // Filtro por semana: converte semana selecionada → mês para comparar com m.mes
+  const fltSemana=document.getElementById('meta-flt-semana')?.value;
+  const fltMes=fltSemana?weekToMonday(fltSemana).toISOString().slice(0,7):null;
+  const lista=fltMes?S.metas.filter(m=>m.mes===fltMes):S.metas;
+
+  if(!lista.length){
+    el.innerHTML=`<div style="text-align:center;padding:28px;color:var(--mu)">${fltMes?`Nenhuma meta para a semana de <strong>${weekLabel(fltSemana)}</strong>.`:'Nenhuma meta cadastrada.'}</div>`;
+    return;
+  }
+  el.innerHTML=lista.map(m=>{
     const pct=parseFloat(m.meta_valor)>0?Math.min(100,Math.round((parseFloat(m.realizado)/parseFloat(m.meta_valor))*100)):0;
     const bateu=pct>=100;
     const auditLine=m.criado_por
@@ -5628,7 +5678,7 @@ function renderMetas(){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div style="font-weight:600;color:var(--ink)">${m.colaborador_nome||m.collab_login||'—'}</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="font-size:12px;color:var(--mu)">${m.mes}</div>
+          <div style="font-size:12px;color:var(--mu)" title="${m.mes}">${(()=>{try{const[y,mo]=m.mes.split('-').map(Number);return new Date(y,mo-1,1).toLocaleDateString('pt-BR',{month:'short',year:'2-digit'});}catch{return m.mes;}})()}</div>
           ${adminBtns}
         </div>
       </div>
