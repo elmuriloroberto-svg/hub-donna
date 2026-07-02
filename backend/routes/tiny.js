@@ -345,22 +345,30 @@ router.get('/melhor-mes', authenticateToken, authorize('admin'), async (req, res
   return loadingResponse(res, 'Calculando histórico de vendas… aguarde ~20s e recarregue.');
 });
 
-// GET /api/tiny/semana — total de vendas desta semana por vendedor (para metas gamificadas)
+// GET /api/tiny/semana — total de vendas do período por vendedor
+// Aceita ?inicio=YYYY-MM-DD&fim=YYYY-MM-DD para usar o período da meta configurada
+// Sem parâmetros: usa segunda–domingo da semana atual
 router.get('/semana', authenticateToken, async (req, res) => {
   try {
-    const hoje = new Date();
-    const diaDaSemana = hoje.getDay();
-    const diffParaSeg = diaDaSemana === 0 ? -6 : 1 - diaDaSemana;
-    const seg = new Date(hoje);
-    seg.setDate(hoje.getDate() + diffParaSeg);
-    const dom = new Date(seg);
-    dom.setDate(seg.getDate() + 6);
-
     const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-    const inicioFmt = fmt(seg);
-    const fimFmt    = fmt(dom);
+    const parseYMD = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
 
-    const cacheKey = `semana_${inicioFmt}`;
+    let inicioFmt, fimFmt;
+    if (req.query.inicio && req.query.fim &&
+        /^\d{4}-\d{2}-\d{2}$/.test(req.query.inicio) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(req.query.fim)) {
+      inicioFmt = fmt(parseYMD(req.query.inicio));
+      fimFmt    = fmt(parseYMD(req.query.fim));
+    } else {
+      const hoje = new Date();
+      const diffParaSeg = hoje.getDay() === 0 ? -6 : 1 - hoje.getDay();
+      const seg = new Date(hoje); seg.setDate(hoje.getDate() + diffParaSeg);
+      const dom = new Date(seg);  dom.setDate(seg.getDate() + 6);
+      inicioFmt = fmt(seg);
+      fimFmt    = fmt(dom);
+    }
+
+    const cacheKey = `semana_${inicioFmt}_${fimFmt}`;
     const cached   = cache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000)
       return res.json({ ok: true, ...cached.data });

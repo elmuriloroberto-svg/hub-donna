@@ -822,7 +822,10 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
         <!-- Meta Semanal Gamificada -->
         <div class="card" style="margin-bottom:16px" id="dash-meta-semana-card">
           <div class="card-hd">
-            <div class="card-ttl"><i class="fa-solid fa-fire-flame-curved" style="color:#e9a030"></i>🎯 Meta da Semana</div>
+            <div>
+              <div class="card-ttl"><i class="fa-solid fa-fire-flame-curved" style="color:#e9a030"></i>🎯 Meta da Semana</div>
+              <div id="dash-ms-periodo" style="font-size:11px;color:var(--mu);margin-top:2px"></div>
+            </div>
             <span class="card-act" id="dash-ms-config-btn" onclick="abrirMetaSemana()" style="display:none"><i class="fa-solid fa-gear"></i>Configurar</span>
           </div>
           <div class="card-bd" id="dash-meta-semana-body">
@@ -889,15 +892,26 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
               <button class="modal-cls" onclick="closeModal('modal-meta-semana')"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="modal-bd">
-              <div style="font-size:11px;color:var(--mu);margin-bottom:12px;background:rgba(255,255,255,.04);border-radius:8px;padding:8px 10px">
-                📅 Semana atual: <span id="ms-periodo-label" style="font-weight:600;color:var(--ink)">—</span>
-              </div>
               <div class="fld">
                 <label>Vendedor</label>
                 <select id="ms-vendedor-sel"><option value="">Selecione...</option></select>
               </div>
               <div class="fld">
-                <label>Meta da Semana (R$)</label>
+                <label>Período válido da meta</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <div>
+                    <div style="font-size:11px;color:var(--mu);margin-bottom:4px">De</div>
+                    <input type="date" id="ms-inicio-input" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);color:var(--ink);font-size:13px;box-sizing:border-box">
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--mu);margin-bottom:4px">Até</div>
+                    <input type="date" id="ms-fim-input" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);color:var(--ink);font-size:13px;box-sizing:border-box">
+                  </div>
+                </div>
+                <div style="font-size:11px;color:var(--mu);margin-top:5px">Somente vendas nesse intervalo contam para a meta.</div>
+              </div>
+              <div class="fld">
+                <label>Meta do Período (R$)</label>
                 <input type="number" id="ms-meta-input" placeholder="Ex: 5000" min="0" step="100">
               </div>
               <div class="fld">
@@ -3346,7 +3360,11 @@ async function loadMetaSemana() {
     if (r1.ok) _metaSemanaCache = r1;
   } catch(_) {}
   try {
-    const r2 = await fetch('/api/tiny/semana', { credentials:'include' }).then(r => r.json());
+    // Usa o período real da meta (data_inicio/data_fim) para buscar vendas no Tiny
+    const periodo = _metaSemanaCache?.semana;
+    const params = periodo?.inicio && periodo?.fim
+      ? `?inicio=${periodo.inicio}&fim=${periodo.fim}` : '';
+    const r2 = await fetch(`/api/tiny/semana${params}`, { credentials:'include' }).then(r => r.json());
     if (r2.ok) _semanaVendasCache = r2;
   } catch(_) {}
   renderMetaSemana();
@@ -3360,6 +3378,16 @@ function renderMetaSemana() {
 
   const isAdmin = ['admin','gerente'].includes(user?.role);
   if (btn) btn.style.display = isAdmin ? '' : 'none';
+
+  // Exibe o período da meta no cabeçalho do card
+  const periodoEl = document.getElementById('dash-ms-periodo');
+  const periodo = _metaSemanaCache?.semana;
+  if (periodoEl && periodo?.inicio && periodo?.fim) {
+    const fmtBR = s => { const [y,m,d] = s.split('-'); return `${d}/${m}/${y}`; };
+    periodoEl.textContent = `${fmtBR(periodo.inicio)} – ${fmtBR(periodo.fim)}`;
+  } else if (periodoEl) {
+    periodoEl.textContent = '';
+  }
 
   const metas = _metaSemanaCache?.data || [];
   if (!metas.length) {
@@ -3436,15 +3464,23 @@ function renderMetaSemana() {
 }
 
 async function abrirMetaSemana() {
-  // Popula select de vendedores a partir dos usuários carregados
   const sel = document.getElementById('ms-vendedor-sel');
   if (sel) {
     const vendedores = S.users.filter(u => u.ativo !== false);
     sel.innerHTML = '<option value="">Selecione...</option>' +
       vendedores.map(u => `<option value="${u.nome||u.login}">${u.nome||u.login}</option>`).join('');
   }
-  const periodoEl = document.getElementById('ms-periodo-label');
-  if (periodoEl) periodoEl.textContent = _semanaAtualStr();
+  // Preenche as datas com o período atual da meta (ou semana seg-sab como padrão)
+  const periodo = _metaSemanaCache?.semana;
+  const hoje = new Date();
+  const diffSeg = hoje.getDay() === 0 ? -6 : 1 - hoje.getDay();
+  const seg = new Date(hoje); seg.setDate(hoje.getDate() + diffSeg);
+  const sab = new Date(seg); sab.setDate(seg.getDate() + 5);
+  const toISO = d => d.toISOString().split('T')[0];
+  const ini = document.getElementById('ms-inicio-input');
+  const fim = document.getElementById('ms-fim-input');
+  if (ini) ini.value = periodo?.inicio || toISO(seg);
+  if (fim) fim.value = periodo?.fim    || toISO(sab);
   openModal('modal-meta-semana');
 }
 
@@ -3456,12 +3492,18 @@ async function salvarMetaSemana() {
   if (!vendedor_nome)  { toast('Selecione um vendedor','fa-circle-exclamation'); return; }
   if (!meta_valor || parseFloat(meta_valor) <= 0) { toast('Informe a meta (valor > 0)','fa-circle-exclamation'); return; }
 
+  const data_inicio = document.getElementById('ms-inicio-input')?.value;
+  const data_fim    = document.getElementById('ms-fim-input')?.value;
+  if (data_inicio && data_fim && data_fim < data_inicio) {
+    toast('Data fim não pode ser antes da data início','fa-circle-exclamation'); return;
+  }
+
   try {
     const r = await fetch('/api/metas/semana', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vendedor_nome, meta_valor: parseFloat(meta_valor), bonus_por_dez_porcento: parseFloat(bonus_por_dez_porcento) }),
+      body: JSON.stringify({ vendedor_nome, meta_valor: parseFloat(meta_valor), bonus_por_dez_porcento: parseFloat(bonus_por_dez_porcento), data_inicio: data_inicio || undefined, data_fim: data_fim || undefined }),
     });
     const json = await r.json();
     if (!json.ok) throw new Error(json.msg);

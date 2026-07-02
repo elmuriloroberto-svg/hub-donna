@@ -20,21 +20,31 @@ function semanaAtual() {
   };
 }
 
-// GET /api/metas/semana — metas da semana atual
+// GET /api/metas/semana — metas cujo período cobre hoje (ou data_inicio passada via ?inicio=)
 router.get('/semana', authenticateToken, async (req, res) => {
   try {
-    const { inicio, fim } = semanaAtual();
+    const hoje = req.query.inicio || new Date().toISOString().split('T')[0];
     const sb = getSupabase();
 
-    let query = sb.from('metas_semanais').select('*').eq('data_inicio', inicio);
+    // Retorna metas onde data_inicio <= hoje <= data_fim
+    let query = sb.from('metas_semanais').select('*')
+      .lte('data_inicio', hoje)
+      .gte('data_fim', hoje)
+      .order('vendedor_nome');
     if (req.user.role === 'vendedor') {
       query = query.ilike('vendedor_nome', `%${req.user.nome || req.user.login}%`);
     }
 
-    const { data, error } = await query.order('vendedor_nome');
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    res.json({ ok: true, data: data || [], semana: { inicio, fim } });
+    // Retorna também as datas reais do período encontrado (para o frontend buscar Tiny com as datas certas)
+    const primeiro = data?.[0];
+    const periodo = primeiro
+      ? { inicio: primeiro.data_inicio, fim: primeiro.data_fim }
+      : semanaAtual();
+
+    res.json({ ok: true, data: data || [], semana: periodo });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar metas semanais' });
@@ -42,9 +52,10 @@ router.get('/semana', authenticateToken, async (req, res) => {
 });
 
 // POST /api/metas/semana — salva/atualiza meta da semana (admin e gerente)
+// Aceita data_inicio e data_fim customizados no body; padrão = semana atual
 router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
-    const { vendedor_nome, meta_valor, bonus_por_dez_porcento } = req.body;
+    const { vendedor_nome, meta_valor, bonus_por_dez_porcento, data_inicio, data_fim } = req.body;
     if (!vendedor_nome || meta_valor == null || meta_valor === '')
       return res.status(400).json({ ok: false, msg: 'Vendedor e meta são obrigatórios' });
 
@@ -53,9 +64,15 @@ router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (
     if (isNaN(metaNum) || metaNum <= 0)
       return res.status(400).json({ ok: false, msg: 'Meta deve ser um valor positivo' });
 
-    const { inicio, fim } = semanaAtual();
-    const sb = getSupabase();
+    // Usa as datas enviadas ou calcula a semana atual
+    const semana = semanaAtual();
+    const inicio = (data_inicio && /^\d{4}-\d{2}-\d{2}$/.test(data_inicio)) ? data_inicio : semana.inicio;
+    const fim    = (data_fim    && /^\d{4}-\d{2}-\d{2}$/.test(data_fim))    ? data_fim    : semana.fim;
 
+    if (fim < inicio)
+      return res.status(400).json({ ok: false, msg: 'Data fim não pode ser antes da data início' });
+
+    const sb = getSupabase();
     const { error } = await sb.from('metas_semanais').upsert(
       {
         vendedor_nome: vendedor_nome.trim(),
@@ -70,7 +87,7 @@ router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (
     );
     if (error) throw new Error(error.message);
 
-    res.json({ ok: true, msg: 'Meta semanal salva!' });
+    res.json({ ok: true, msg: 'Meta semanal salva!', periodo: { inicio, fim } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao salvar meta semanal' });
