@@ -4380,6 +4380,36 @@ function _crmPagNav(totalPags, totalItems) {
   </div>`;
 }
 
+// ── CRM Contato (localStorage, expira 3 dias) ─────────────────────────────────
+const CRM_CONTATO_DIAS = 3;
+function _crmContatoKey(nome) { return 'crm_ct_' + encodeURIComponent(nome); }
+
+function _crmContatoStatus(nome) {
+  const raw = localStorage.getItem(_crmContatoKey(nome));
+  if (!raw) return null;
+  const ts = parseInt(raw, 10);
+  if (isNaN(ts)) { localStorage.removeItem(_crmContatoKey(nome)); return null; }
+  const msDecorrido = Date.now() - ts;
+  const diasDecorrido = msDecorrido / 86400000;
+  if (diasDecorrido >= CRM_CONTATO_DIAS) { localStorage.removeItem(_crmContatoKey(nome)); return null; }
+  const hRestante = Math.ceil((CRM_CONTATO_DIAS - diasDecorrido) * 24);
+  const label = diasDecorrido < 1
+    ? 'há ' + Math.floor(msDecorrido / 3600000) + 'h'
+    : 'há ' + Math.floor(diasDecorrido) + 'd';
+  return { label, hRestante };
+}
+
+function crmMarcarContato(nome) {
+  localStorage.setItem(_crmContatoKey(nome), Date.now().toString());
+  renderCRM();
+  toast('Contato registrado — libera em ' + CRM_CONTATO_DIAS + ' dias', 'fa-message');
+}
+
+function crmDesfazerContato(nome) {
+  localStorage.removeItem(_crmContatoKey(nome));
+  renderCRM();
+}
+
 function renderCRM() {
   if (!_crmData) return;
   const filtro = document.getElementById('crm-sel-temp')?.value || '';
@@ -4404,6 +4434,19 @@ function renderCRM() {
     const ds = c.dias_sem;
     const dsCor = ds === null || ds > 45 ? '#7c3aed' : ds > 30 ? '#3b82f6' : ds > 15 ? '#d97706' : '#e55';
     const waBttn = _waButtons(c.telefones, c.celular, c.telefone);
+    const contato = _crmContatoStatus(c.nome);
+    const nomeEsc = c.nome.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    const contatoCell = contato
+      ? `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+           <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(82,183,136,.15);color:#52B788;border:1px solid rgba(82,183,136,.4);border-radius:99px;padding:3px 9px;font-size:11px;font-weight:700">
+             <i class="fa-solid fa-check"></i> Contatado
+           </span>
+           <span style="font-size:10px;color:var(--mu)">${contato.label} · libera em ${contato.hRestante}h</span>
+           <button onclick="crmDesfazerContato('${nomeEsc}')" style="font-size:10px;color:var(--mu);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">desfazer</button>
+         </div>`
+      : `<button onclick="crmMarcarContato('${nomeEsc}')" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:transparent;color:var(--ch);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer" title="Marcar que enviei mensagem">
+           <i class="fa-solid fa-message"></i> Enviei
+         </button>`;
     return `<tr>
       <td style="font-size:13px;font-weight:600">${c.nome}</td>
       <td style="text-align:center"><span style="background:${cor[c.temperatura]};color:${corTxt[c.temperatura]};padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700">${icone[c.temperatura]} ${c.temperatura.charAt(0).toUpperCase() + c.temperatura.slice(1)}</span></td>
@@ -4412,6 +4455,7 @@ function renderCRM() {
       <td style="text-align:center;font-size:12px;font-weight:600;color:var(--ok)">${c.ticket_medio > 0 ? R2(c.ticket_medio) : '—'}</td>
       <td style="text-align:center;font-size:12px;color:var(--mu)">${c.frequencia_dias > 0 ? 'a cada ' + c.frequencia_dias + 'd' : c.qtd_pedidos > 1 ? '—' : 'Compra única'}</td>
       <td style="text-align:center">${waBttn}</td>
+      <td style="text-align:center">${contatoCell}</td>
     </tr>`;
   }).join('');
 
@@ -4424,6 +4468,7 @@ function renderCRM() {
       <th style="text-align:center">Ticket Médio</th>
       <th style="text-align:center">Frequência</th>
       <th style="text-align:center">WhatsApp</th>
+      <th style="text-align:center">Contato</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>${_crmPagNav(totalPags, lista.length)}`;
