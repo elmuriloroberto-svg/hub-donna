@@ -461,6 +461,25 @@ document.addEventListener("focusin", e=>{
 /* ===== RENDER ===== */
 const ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-6 6-2.5-2.5L3 19"/></svg>`;
 
+/* converte texto em formato BR (ex: "DE R$ 99,99") pra número */
+function parseBRL(str){
+  if(!str) return 0;
+  let s = String(str).replace(/[^\d,.-]/g,"").trim();
+  if(!s) return 0;
+  if(s.includes(",")) s = s.replace(/\./g,"").replace(",", ".");
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+/* calcula "-X%" a partir do DE e do POR do produto (só faz sentido no modo "de") */
+function calcularDesconto(p){
+  if(p.modoPreco !== "de") return null;
+  const deVal  = parseBRL(p.de);
+  const porVal = parseBRL(`${p.porInt}${p.porCents||""}`);
+  if(deVal<=0 || porVal<=0 || deVal<=porVal) return null;
+  const pct = Math.round((1 - porVal/deVal) * 100);
+  return pct>0 ? `-${pct}%` : null;
+}
+
 function render(){
   story.dataset.theme = STATE.theme;
   story.dataset.fmt   = STATE.fmt;
@@ -536,16 +555,26 @@ function render(){
         if(estaMostrando){
           p.showBadge = false;
         }else{
-          if(!p.off) p.off = "-10%";
+          p.off = calcularDesconto(p) || p.off || "-10%";
           p.showBadge = true;
         }
         render();
       });
     }
 
-    /* sincronizar edições de texto com o modelo */
+    /* sincronizar edições de texto com o modelo (e recalcular % quando o selo está ativo) */
     el.querySelectorAll("[data-f]").forEach(n=>{
-      n.addEventListener("input", ()=>{ p[n.dataset.f] = n.innerText; });
+      n.addEventListener("input", ()=>{
+        p[n.dataset.f] = n.innerText;
+        if(["de","porInt","porCents"].includes(n.dataset.f) && p.showBadge !== false && p.off){
+          const novo = calcularDesconto(p);
+          if(novo){
+            p.off = novo;
+            const offEl = el.querySelector(".off");
+            if(offEl) offEl.textContent = novo;
+          }
+        }
+      });
     });
 
     grid.appendChild(el);
