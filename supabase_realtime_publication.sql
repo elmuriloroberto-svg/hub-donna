@@ -21,5 +21,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE
   folha_ponto,
   processos,
   entregas,
-  calendario_eventos,
   hub_data;
+
+-- calendario_eventos: tabela ainda não existe em produção (feature
+-- planejada, dashboard.js já tem fallback silencioso pra isso).
+-- Adicionar aqui quando a tabela for criada.

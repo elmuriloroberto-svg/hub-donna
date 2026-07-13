@@ -23,7 +23,7 @@ function origemPermitida(origin) {
 const TABELAS = [
   'tasks', 'clientes', 'crm_clientes', 'boletos_pagar', 'boletos_receber',
   'metas', 'metas_semanais', 'metas_mensais', 'folha', 'folha_ponto',
-  'processos', 'entregas', 'calendario_eventos', 'hub_data',
+  'processos', 'entregas', 'hub_data',
 ];
 
 const supabase = createClient(
