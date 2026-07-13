@@ -23,6 +23,7 @@ const configRoutes    = require('./routes/config');
 const dashboardRoutes = require('./routes/dashboard');
 const hubRoutes       = require('./routes/hub');
 const chatRoutes      = require('./routes/chat');
+const realtimeRoutes  = require('./routes/realtime');
 
 const app    = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -98,7 +99,9 @@ app.use(
         scriptSrc:   ["'self'", "'unsafe-inline'"],  // unsafe-inline necessário para o HTML inline
         styleSrc:    ["'self'", "'unsafe-inline'"],
         imgSrc:      ["'self'", "data:", "https:"],
-        connectSrc:  ["'self'"],
+        // wss://*.up.railway.app — relay de tempo real (realtime-relay/), fora
+        // da Vercel; sem isso o navegador bloqueia a conexão WebSocket por CSP.
+        connectSrc:  ["'self'", "https://*.up.railway.app", "wss://*.up.railway.app"],
         fontSrc:     ["'self'", "data:", "https:"],
         objectSrc:   ["'none'"],                     // bloqueia Flash e plugins (igual ML: object-src 'none')
         mediaSrc:    ["'self'"],
@@ -169,6 +172,7 @@ app.use('/api/config',    apiLimiter,  configRoutes);
 app.use('/api/dashboard', apiLimiter,  dashboardRoutes);
 app.use('/api/hub',       apiLimiter,  hubRoutes);
 app.use('/api/chat',      apiLimiter,  chatRoutes);
+app.use('/api/realtime',  apiLimiter,  noCache, realtimeRoutes);
 
 // ── Frontend fallback ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

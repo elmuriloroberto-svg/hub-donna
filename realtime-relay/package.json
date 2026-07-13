@@ -1,0 +1,16 @@
+{
+  "name": "donna-hub-realtime-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor sempre-ligado que assina mudanças no Supabase (via service key) e retransmite pro navegador via WebSocket autenticado. Roda separado da Vercel (que é serverless e não mantém conexões longas).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "dotenv": "^16.6.1",
+    "jsonwebtoken": "^9.0.3",
+    "ws": "^8.21.0"
+  }
+}

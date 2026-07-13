@@ -2636,6 +2636,7 @@ async function bootApp() {
   toggleBoletoFieldsRec();
   // Restaura histórico de clientes do cache local (silencioso, sem fetch se ainda válido)
   carregarHistoricoClientes(false);
+  conectarTempoReal();
 }
 
 function applyRBAC(role) {
@@ -2739,6 +2740,58 @@ async function syncAll(){
   icon.classList.remove('fa-spin');
 }
 function setSyncStatus(s,msg){const el=document.getElementById('sync-status');const c=s==='ok'?'var(--ok)':s==='wa'?'var(--wa)':'var(--er)';el.innerHTML=`<i class="fa-solid fa-circle" style="font-size:7px;color:${c}"></i>${msg}`;}
+
+/* ======================================
+   TEMPO REAL — relay via WebSocket (opcional, ver realtime-relay/README.md)
+   Se REALTIME_RELAY_URL não estiver preenchida ou o relay estiver fora do
+   ar, o Hub segue funcionando exatamente como antes (sync manual/por troca
+   de aba) — isso é só uma melhoria aditiva, nunca uma dependência.
+====================================== */
+const REALTIME_RELAY_URL=''; // preencher com wss://<algo>.up.railway.app após o deploy
+
+const REALTIME_TABLE_LOADERS={
+  tasks:()=>loadTasks(), clientes:()=>carregarCRM(), crm_clientes:()=>carregarCRM(),
+  boletos_pagar:()=>loadBoletos(), boletos_receber:()=>loadRecebiveis(),
+  metas:()=>loadMetas(), metas_semanais:()=>loadMetas(), metas_mensais:()=>loadMetas(),
+  folha:()=>loadFolha(), folha_ponto:()=>loadPonto(), processos:()=>loadProcessos(),
+  entregas:()=>loadEntregas(), calendario_eventos:()=>loadDashboard(), hub_data:()=>loadDashboard(),
+};
+// tabela → nome da page (id sem o prefixo "pg-") que precisa estar ativa pra valer recarregar
+const REALTIME_TABLE_PAGE={
+  tasks:'agenda', clientes:'crm', crm_clientes:'crm',
+  boletos_pagar:'boletos', boletos_receber:'recebiveis',
+  metas:'metas', metas_semanais:'metas', metas_mensais:'metas',
+  folha:'folha', folha_ponto:'ponto', processos:'processos',
+  entregas:'entregas', calendario_eventos:'dashboard', hub_data:'dashboard',
+};
+let _rtSocket=null,_rtReconnectDelay=2000;
+const _rtDebounce={};
+function paginaAtiva(){return document.querySelector('.page.active')?.id?.replace('pg-','')||'';}
+async function conectarTempoReal(){
+  if(!REALTIME_RELAY_URL)return; // relay ainda não configurado/deployado
+  let ticket;
+  try{
+    const r=await fetch('/api/realtime/ticket',{credentials:'include'});
+    const d=await r.json();
+    if(!d.ok)return;
+    ticket=d.ticket;
+  }catch(_){return;}
+  try{_rtSocket?.close();}catch(_){}
+  const ws=new WebSocket(REALTIME_RELAY_URL+'?ticket='+encodeURIComponent(ticket));
+  _rtSocket=ws;
+  ws.onopen=()=>{_rtReconnectDelay=2000;setSyncStatus('ok','Tempo real ativo');};
+  ws.onclose=()=>{setSyncStatus('wa','Reconectando...');setTimeout(conectarTempoReal,_rtReconnectDelay);_rtReconnectDelay=Math.min(_rtReconnectDelay*1.7,30000);};
+  ws.onerror=()=>{}; // onclose já cuida da reconexão
+  ws.onmessage=(ev)=>{
+    let msg;try{msg=JSON.parse(ev.data);}catch(_){return;}
+    const pagina=REALTIME_TABLE_PAGE[msg.table];
+    if(pagina&&paginaAtiva()!==pagina)return; // ninguém olhando essa tela agora
+    const loader=REALTIME_TABLE_LOADERS[msg.table];
+    if(!loader)return;
+    clearTimeout(_rtDebounce[msg.table]);
+    _rtDebounce[msg.table]=setTimeout(loader,1000);
+  };
+}
 
 /* ======================================
    CALCULADORA - FORMULA DINAMICA
