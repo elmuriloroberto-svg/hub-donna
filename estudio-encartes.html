@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Donna Unha — Estúdio de Encartes v2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;500;700;900&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  min-height:100vh;background:#f2e9ec;
+  font-family:'Montserrat','Helvetica Neue',Arial,sans-serif;
+  display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px;
+}
+
+/* ============ TOOLBAR ============ */
+.bar{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
+.bar .lbl{font-size:10px;font-weight:700;letter-spacing:1px;color:#8a6b78;text-transform:uppercase;margin-right:2px}
+.chip{
+  padding:6px 12px;border-radius:999px;border:1px solid #e3ccd6;background:#fff;
+  font-size:11.5px;font-weight:600;color:#3d2230;cursor:pointer;user-select:none;font-family:inherit;
+}
+.chip.on{background:#e95655;border-color:#e95655;color:#fff;font-weight:700}
+.chip:disabled{opacity:.4;cursor:default}
+select.chip{padding:6px 8px}
+.dica{font-size:11px;color:#8a6b78;text-align:center;max-width:640px}
+
+/* ============ TEMAS ============ */
+.story{
+  --bg:linear-gradient(165deg,#ffdbe2 0%,#ffc9d4 55%,#ffb3c1 100%);
+  --glow1:rgba(255,77,109,.22);--glow2:rgba(225,71,157,.16);
+  --marca:#3d2230;--slogan:#3d2230;
+  --title-grad:linear-gradient(180deg,#ff7d92 0%,#ff4d6d 45%,#e95655 100%);
+  --title-shadow:drop-shadow(0 3px 0 rgba(255,255,255,.65)) drop-shadow(0 6px 10px rgba(180,40,70,.35));
+  --card-a:#ffffff;--card-b:#ffdbe2;
+  --card-shadow:0 8px 20px rgba(160,40,80,.16),0 2px 5px rgba(160,40,80,.10);
+  --foto-border:#ffb3c1;--foto-bg:linear-gradient(180deg,#fff,#fff6f8);--foto-ico:#ff4d6d;
+  --nome:#3d2230;--de:#a98a95;
+  --pill:linear-gradient(180deg,#ff4d6d,#e95655);--pill-txt:#fff;
+  --pill-shadow:0 4px 10px rgba(233,86,85,.4);
+  --badge:linear-gradient(180deg,#e1479d,#c02e83);--badge-txt:#fff;
+  --apartir:#e1479d;
+  --foot:linear-gradient(180deg,#e95655,#c93d47);--foot-txt:#fff;
+  --coins:none;
+}
+.story[data-theme="maio"]{
+  --bg:linear-gradient(160deg,#ffe4ec 0%,#ffb3c1 60%,#ff8fab 100%);
+  --title-grad:linear-gradient(180deg,#ff8fab 0%,#e1479d 55%,#c02e83 100%);
+  --glow1:rgba(225,71,157,.20);--glow2:rgba(255,143,171,.25);
+  --badge:linear-gradient(180deg,#ff4d6d,#e95655);
+  --apartir:#c02e83;
+  --foot:linear-gradient(180deg,#e1479d,#b12f78);
+}
+.story[data-theme="namorados"]{
+  --bg:linear-gradient(160deg,#ff8095 0%,#e95655 45%,#b8203f 100%);
+  --marca:#fff;--slogan:#ffdbe2;
+  --title-grad:linear-gradient(180deg,#ffffff 0%,#ffdbe2 55%,#ffb3c1 100%);
+  --title-shadow:drop-shadow(0 3px 0 rgba(150,20,45,.5)) drop-shadow(0 6px 12px rgba(90,0,20,.45));
+  --glow1:rgba(255,219,226,.25);--glow2:rgba(225,71,157,.35);
+  --card-b:#fff0f3;
+  --foot:linear-gradient(180deg,#8f1030,#6b0a22);
+}
+.story[data-theme="julho"]{ --coins:block; }
+.story[data-theme="black"]{
+  --bg:radial-gradient(circle at 80% 10%,rgba(225,71,157,.18),transparent 45%),
+       radial-gradient(circle at 10% 90%,rgba(230,193,92,.12),transparent 45%),
+       linear-gradient(170deg,#1f1e24 0%,#18181c 100%);
+  --glow1:transparent;--glow2:transparent;
+  --marca:#f3e8d8;--slogan:#e6c15c;
+  --title-grad:linear-gradient(180deg,#ffd98a 0%,#e6c15c 45%,#e1479d 110%);
+  --title-shadow:drop-shadow(0 0 14px rgba(225,71,157,.55)) drop-shadow(0 3px 6px rgba(0,0,0,.6));
+  --card-a:#232228;--card-b:#28242c;
+  --card-shadow:0 10px 24px rgba(0,0,0,.5),0 0 0 1px rgba(225,71,157,.25);
+  --foto-border:#5a3a52;--foto-bg:linear-gradient(180deg,#2c2a32,#242229);--foto-ico:#e1479d;
+  --nome:#f5edf2;--de:#8d8394;
+  --pill:linear-gradient(180deg,#e1479d,#a92672);--pill-shadow:0 4px 14px rgba(225,71,157,.5);
+  --badge:linear-gradient(180deg,#ffd98a,#e6c15c);--badge-txt:#3a2a00;
+  --apartir:#e6c15c;
+  --foot:linear-gradient(180deg,#2a262e,#1c1a20);--foot-txt:#f3e8d8;
+}
+.story[data-theme="verao"]{
+  --bg:linear-gradient(160deg,#ffe9a8 0%,#ffc38a 38%,#ff9d8a 68%,#ffb3c1 100%);
+  --title-grad:linear-gradient(180deg,#ff9d5c 0%,#e95655 55%,#e1479d 110%);
+  --glow1:rgba(255,196,110,.35);--glow2:rgba(255,77,109,.22);
+  --badge:linear-gradient(180deg,#ffb44d,#f08a2d);--badge-txt:#5a3300;
+  --apartir:#e07a2e;
+  --foot:linear-gradient(180deg,#f08a5c,#e95655);
+}
+
+/* ============ ARTE ============ */
+.story{
+  width:420px;height:750px;position:relative;overflow:hidden;border-radius:14px;
+  background:var(--bg);
+  box-shadow:0 18px 50px rgba(120,30,60,.25);
+  display:flex;flex-direction:column;flex-shrink:0;
+}
+.story::before,.story::after{
+  content:"";position:absolute;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,var(--glow1),transparent 70%);
+  width:340px;height:340px;right:-120px;top:-90px;
+}
+.story::after{background:radial-gradient(circle,var(--glow2),transparent 70%);left:-110px;top:auto;bottom:-90px}
+
+.blob{display:var(--coins);position:absolute;border-radius:50%;pointer-events:none;z-index:1}
+.b1{width:110px;height:110px;right:-34px;top:64px;background:radial-gradient(circle at 35% 30%,#ff8a9d,#e95655);box-shadow:inset -8px -10px 18px rgba(0,0,0,.18),0 10px 22px rgba(180,40,70,.35)}
+.b2{width:76px;height:76px;left:-24px;top:300px;background:radial-gradient(circle at 35% 30%,#ff9eb0,#ff4d6d);box-shadow:inset -6px -8px 14px rgba(0,0,0,.16),0 8px 18px rgba(180,40,70,.3)}
+.b3{width:64px;height:64px;right:-18px;bottom:118px;background:radial-gradient(circle at 35% 30%,#f07cc0,#e1479d);box-shadow:inset -6px -8px 14px rgba(0,0,0,.16),0 8px 18px rgba(150,30,100,.3)}
+.blob::after{content:"$";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.9);font-weight:900;font-size:2em;text-shadow:0 2px 4px rgba(0,0,0,.2)}
+
+/* header */
+header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
+.marca{font-weight:300;font-size:15px;letter-spacing:2px;color:var(--marca)}
+.marca b{font-weight:700}
+.titulo{
+  margin-top:5px;font-weight:900;font-size:42px;line-height:.95;text-transform:uppercase;
+  background:var(--title-grad);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:var(--title-shadow);outline:none;
+}
+.titulo small{display:block;font-size:22px;letter-spacing:6px}
+.slogan{margin-top:6px;font-weight:300;font-size:10px;letter-spacing:4px;color:var(--slogan);opacity:.8;text-transform:uppercase}
+
+/* ===== grid coletivo — FOTO GRANDE, faixa compacta ===== */
+.grid{
+  position:relative;z-index:2;flex:1;display:grid;
+  grid-template-columns:1fr 1fr;grid-auto-rows:1fr;
+  gap:11px;padding:10px 18px 5px;min-height:0;
+}
+.card{
+  background:var(--card-a);border-radius:20px;box-shadow:var(--card-shadow);
+  padding:7px 7px 8px;position:relative;
+  display:flex;flex-direction:column;align-items:center;min-height:0;
+}
+.card:nth-child(even){background:var(--card-b)}
+.foto{
+  width:100%;flex:1;min-height:105px;border-radius:14px;
+  border:2px dashed var(--foto-border);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--foto-ico);background:var(--foto-bg);
+  background-size:cover;background-position:center;cursor:pointer;overflow:hidden;
+}
+.foto.tem-img{border-style:solid}
+.foto.tem-img svg{display:none}
+.foto svg{width:30px;height:30px;opacity:.55}
+.pnome{
+  margin-top:5px;text-align:center;font-weight:700;font-size:9.5px;line-height:1.15;
+  letter-spacing:.2px;text-transform:uppercase;color:var(--nome);outline:none;
+  max-width:100%;
+}
+.de{font-size:9px;font-weight:500;color:var(--de);text-decoration:line-through;margin-top:1px;outline:none}
+.apartir{font-size:8px;font-weight:700;letter-spacing:1.3px;color:var(--apartir);margin-top:1px;text-transform:uppercase;outline:none}
+.por{
+  margin-top:2px;background:var(--pill);color:var(--pill-txt);font-weight:900;font-size:15px;
+  padding:3px 13px;border-radius:999px;box-shadow:var(--pill-shadow);white-space:nowrap;outline:none;
+}
+.por sup{font-size:9px;font-weight:700;margin-right:2px}
+.por .cents{vertical-align:super;font-size:9px}
+.off{
+  position:absolute;top:-8px;right:-6px;background:var(--badge);color:var(--badge-txt);
+  font-weight:900;font-size:11px;padding:5px 8px;border-radius:999px;
+  box-shadow:0 4px 9px rgba(0,0,0,.28);transform:rotate(8deg);z-index:3;outline:none;
+}
+
+/* botão de alternar tipo de preço (controle de edição) */
+.ctrl{
+  position:absolute;top:-8px;left:-6px;z-index:4;
+  width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;
+  background:#3d2230;color:#fff;font-size:13px;line-height:1;
+  box-shadow:0 3px 8px rgba(0,0,0,.35);
+}
+.ctrl:hover{background:#e1479d}
+.story.sem-controles .ctrl{display:none}
+
+/* modo individual */
+.story[data-modo="individual"] .grid{display:flex;align-items:stretch;justify-content:center;padding:12px 34px 6px}
+.story[data-modo="individual"] .card{width:100%;padding:14px 14px 18px;border-radius:26px}
+.story[data-modo="individual"] .foto{min-height:230px;border-radius:18px}
+.story[data-modo="individual"] .foto svg{width:52px;height:52px}
+.story[data-modo="individual"] .pnome{font-size:19px;margin-top:12px}
+.story[data-modo="individual"] .de{font-size:15px;margin-top:5px}
+.story[data-modo="individual"] .apartir{font-size:12px;margin-top:5px}
+.story[data-modo="individual"] .por{font-size:34px;padding:8px 26px;margin-top:7px}
+.story[data-modo="individual"] .por sup{font-size:16px}
+.story[data-modo="individual"] .por .cents{font-size:17px}
+.story[data-modo="individual"] .off{font-size:16px;padding:8px 12px;top:-10px;right:-8px}
+
+/* footer */
+footer{
+  position:relative;z-index:2;margin:5px 18px 14px;background:var(--foot);
+  border-radius:16px;padding:8px 14px 7px;text-align:center;color:var(--foot-txt);
+  box-shadow:0 8px 18px rgba(0,0,0,.22);
+}
+.contatos{display:flex;justify-content:center;gap:14px;font-weight:700;font-size:11px;letter-spacing:.4px}
+.contatos span{display:flex;align-items:center;gap:5px}
+.contatos svg{width:12px;height:12px;fill:currentColor}
+.regras{margin-top:4px;font-weight:300;font-size:6.6px;letter-spacing:.3px;line-height:1.35;opacity:.85;text-transform:uppercase;outline:none}
+
+/* ============ FEED 1:1 ============ */
+.story[data-fmt="feed"]{width:600px;height:600px}
+.story[data-fmt="feed"] header{padding:14px 20px 3px}
+.story[data-fmt="feed"] .titulo{font-size:33px}
+.story[data-fmt="feed"] .titulo small{font-size:17px;letter-spacing:5px}
+.story[data-fmt="feed"] .slogan{margin-top:3px;font-size:9px}
+.story[data-fmt="feed"] .grid{grid-template-columns:1fr 1fr 1fr;gap:10px;padding:9px 16px 3px}
+.story[data-fmt="feed"] .foto{min-height:85px}
+.story[data-fmt="feed"] .pnome{font-size:9px}
+.story[data-fmt="feed"] .por{font-size:14px;padding:3px 11px}
+.story[data-fmt="feed"] footer{margin:4px 16px 12px;padding:7px 12px 6px}
+.story[data-fmt="feed"] .regras{font-size:6px}
+.story[data-fmt="feed"][data-modo="individual"] .grid{padding:9px 130px 3px}
+.story[data-fmt="feed"][data-modo="individual"] .foto{min-height:150px}
+.story[data-fmt="feed"][data-modo="individual"] .pnome{font-size:16px}
+.story[data-fmt="feed"][data-modo="individual"] .por{font-size:27px}
+
+[contenteditable]:hover{box-shadow:0 0 0 1px rgba(0,0,0,.12);border-radius:4px}
+[contenteditable]:focus{box-shadow:0 0 0 2px #e1479d;border-radius:4px}
+.story.sem-controles [contenteditable]:hover{box-shadow:none}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="lbl">Tema</span>
+  <button class="chip" data-t="maio">Maio na Donna</button>
+  <button class="chip" data-t="namorados">Namorados/Junina</button>
+  <button class="chip on" data-t="julho">Julho na Donna</button>
+  <button class="chip" data-t="black">Black Donna</button>
+  <button class="chip" data-t="verao">Verão Donna</button>
+</div>
+<div class="bar">
+  <span class="lbl">Formato</span>
+  <button class="chip on" data-f="story">Story 9:16</button>
+  <button class="chip" data-f="feed">Feed 1:1</button>
+  <span class="lbl" style="margin-left:8px">Modo</span>
+  <button class="chip on" data-m="coletivo">Coletivo</button>
+  <button class="chip" data-m="individual">Individual</button>
+  <select class="chip" id="selDestaque" style="display:none"></select>
+</div>
+<div class="bar">
+  <button class="chip" id="btnUndo" disabled>↩️ Desfazer</button>
+  <button class="chip" id="btnCtrl">🎛️ Ocultar controles p/ print</button>
+</div>
+<p class="dica">💡 O botão preto <b>⇄</b> em cada card alterna o tipo de preço: <b>DE riscado → A partir de → só o POR</b>. Clique no tracejado para subir a foto. Textos são editáveis. Antes do print, oculte os controles.</p>
+
+<div class="story" data-theme="julho" data-fmt="story" data-modo="coletivo" id="story">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+
+  <header>
+    <div class="marca">Donna <b>Unha</b></div>
+    <h1 class="titulo" contenteditable="true" id="titulo">Julho <small>na Donna</small></h1>
+    <div class="slogan">Beleza em suas mãos</div>
+  </header>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    <div class="contatos">
+      <span><svg viewBox="0 0 24 24"><path d="M12 2.2c-5.4 0-9.8 4.4-9.8 9.8 0 5.4 4.4 9.8 9.8 9.8s9.8-4.4 9.8-9.8c0-5.4-4.4-9.8-9.8-9.8zm0 4.4a5.4 5.4 0 110 10.8 5.4 5.4 0 010-10.8zm0 2.2a3.2 3.2 0 100 6.4 3.2 3.2 0 000-6.4zm5.6-3.4a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z"/></svg>@donnaunhadf</span>
+      <span><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-8.6 15.1L2 22l5.1-1.3A10 10 0 1012 2zm5 13.9c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-2.7-.9-4.5-3-5.6-4.6-.9-1.3-1.4-2.7-1.1-3.5.2-.6.9-1.4 1.4-1.4h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .6l-.5.7c-.1.2-.2.4 0 .7.5.9 1.9 2.3 3.3 2.9.3.1.5.1.6-.1l.7-.9c.2-.2.4-.3.6-.2l2 1c.3.1.5.2.5.4 0 .1 0 .5-.5.8z"/></svg>(61) 99284-1078</span>
+    </div>
+    <div class="regras" contenteditable="true" id="regras">*OFERTAS VÁLIDAS ATÉ O FIM DO MÊS OU ENQUANTO DURAREM OS ESTOQUES. OS VALORES "A PARTIR DE" VARIAM POR MARCA E COR. EXCLUSIVO PARA COLEÇÕES SELECIONADAS. IMAGENS MERAMENTE ILUSTRATIVAS.</div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ===== MODELO =====
+   modoPreco: "de" (preço antigo riscado) | "apartir" | "so" (apenas o POR) */
+const STATE = {
+  produtos: [
+    {nome:"Gel Blume 30g",            de:"DE R$ 99,99", porInt:"89", porCents:",99", off:"-10%", modoPreco:"de",      img:null},
+    {nome:"Esmaltes em Gel",          de:"DE R$ 0,00",  porInt:"7",  porCents:",99", off:null,   modoPreco:"apartir", img:null},
+    {nome:"Spray Secante Mood 400ml", de:"DE R$ 15,90", porInt:"13", porCents:",19", off:null,   modoPreco:"de",      img:null},
+    {nome:"Esmalte Risqué 8ml",       de:"DE R$ 0,00",  porInt:"4",  porCents:",99", off:null,   modoPreco:"apartir", img:null},
+    {nome:"Esmalte Impala 7,5ml",     de:"DE R$ 0,00",  porInt:"3",  porCents:",79", off:null,   modoPreco:"apartir", img:null},
+    {nome:"Acetona Monaly 500ml",     de:"DE R$ 12,90", porInt:"10", porCents:",99", off:"-15%", modoPreco:"de",      img:null}
+  ],
+  titulo:'Julho <small>na Donna</small>',
+  regras:null, // preenchido no boot a partir do HTML
+  theme:"julho", fmt:"story", modo:"coletivo", destaque:0
+};
+
+const TITULOS = {
+  maio:'Maio <small>na Donna</small>',
+  namorados:'Especial <small>Namorados</small>',
+  julho:'Julho <small>na Donna</small>',
+  black:'Black <small>Donna</small>',
+  verao:'Verão <small>Donna Unha</small>'
+};
+
+const story = document.getElementById("story");
+const grid  = document.getElementById("grid");
+const selD  = document.getElementById("selDestaque");
+const elTit = document.getElementById("titulo");
+const elReg = document.getElementById("regras");
+const btnUndo = document.getElementById("btnUndo");
+
+STATE.regras = elReg.innerHTML;
+
+/* ===== HISTÓRICO (desfazer) ===== */
+const HIST = [];
+function snapshot(){
+  HIST.push(JSON.stringify(STATE));
+  if(HIST.length > 60) HIST.shift();
+  btnUndo.disabled = false;
+}
+btnUndo.onclick = ()=>{
+  if(!HIST.length) return;
+  const prev = JSON.parse(HIST.pop());
+  Object.assign(STATE, prev);
+  btnUndo.disabled = !HIST.length;
+  syncToolbar(); render();
+};
+
+/* snapshot no início de cada edição de texto (uma vez por foco) */
+document.addEventListener("focusin", e=>{
+  if(e.target.isContentEditable) snapshot();
+});
+
+/* ===== RENDER ===== */
+const ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-6 6-2.5-2.5L3 19"/></svg>`;
+
+function render(){
+  story.dataset.theme = STATE.theme;
+  story.dataset.fmt   = STATE.fmt;
+  story.dataset.modo  = STATE.modo;
+  elTit.innerHTML = STATE.titulo;
+  elReg.innerHTML = STATE.regras;
+
+  grid.innerHTML = "";
+  const lista = (STATE.modo==="individual")
+    ? [STATE.produtos[STATE.destaque]]
+    : STATE.produtos.slice(0,6);
+
+  lista.forEach(p=>{
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `
+      <button class="ctrl" title="Alternar: DE riscado → A partir de → só o POR">⇄</button>
+      ${p.off?`<div class="off" contenteditable="true" data-f="off">${p.off}</div>`:""}
+      <div class="foto ${p.img?"tem-img":""}" style="${p.img?`background-image:url(${p.img})`:""}" title="Clique para subir a foto">${ICON}</div>
+      <div class="pnome" contenteditable="true" data-f="nome">${p.nome}</div>
+      ${p.modoPreco==="de"?`<div class="de" contenteditable="true" data-f="de">${p.de}</div>`:""}
+      ${p.modoPreco==="apartir"?`<div class="apartir">A partir de</div>`:""}
+      <div class="por"><sup>R$</sup><span contenteditable="true" data-f="porInt">${p.porInt}</span><span class="cents" contenteditable="true" data-f="porCents">${p.porCents}</span></div>`;
+
+    /* foto */
+    const foto = el.querySelector(".foto");
+    foto.addEventListener("click", ()=>{
+      const inp = document.createElement("input");
+      inp.type="file"; inp.accept="image/*";
+      inp.onchange = e=>{
+        const f=e.target.files[0]; if(!f) return;
+        const r=new FileReader();
+        r.onload = ()=>{ snapshot(); p.img=r.result; render(); };
+        r.readAsDataURL(f);
+      };
+      inp.click();
+    });
+
+    /* alternar tipo de preço */
+    el.querySelector(".ctrl").addEventListener("click", ()=>{
+      snapshot();
+      p.modoPreco = p.modoPreco==="de" ? "apartir" : p.modoPreco==="apartir" ? "so" : "de";
+      render();
+    });
+
+    /* sincronizar edições de texto com o modelo */
+    el.querySelectorAll("[data-f]").forEach(n=>{
+      n.addEventListener("input", ()=>{ p[n.dataset.f] = n.innerText; });
+    });
+
+    grid.appendChild(el);
+  });
+}
+
+/* título e regras sincronizam com o modelo */
+elTit.addEventListener("input", ()=>{ STATE.titulo = elTit.innerHTML; });
+elReg.addEventListener("input", ()=>{ STATE.regras = elReg.innerHTML; });
+
+/* ===== TOOLBAR ===== */
+function syncToolbar(){
+  document.querySelectorAll("[data-t]").forEach(b=>b.classList.toggle("on", b.dataset.t===STATE.theme));
+  document.querySelectorAll("[data-f]").forEach(b=>{ if(b.tagName==="BUTTON") b.classList.toggle("on", b.dataset.f===STATE.fmt); });
+  document.querySelectorAll("[data-m]").forEach(b=>b.classList.toggle("on", b.dataset.m===STATE.modo));
+  selD.style.display = STATE.modo==="individual" ? "inline-block" : "none";
+  selD.value = STATE.destaque;
+}
+document.querySelectorAll(".bar [data-t]").forEach(b=>b.onclick=()=>{
+  snapshot();
+  STATE.theme = b.dataset.t;
+  STATE.titulo = TITULOS[b.dataset.t];
+  syncToolbar(); render();
+});
+document.querySelectorAll(".bar button[data-f]").forEach(b=>b.onclick=()=>{
+  snapshot(); STATE.fmt = b.dataset.f; syncToolbar(); render();
+});
+document.querySelectorAll(".bar [data-m]").forEach(b=>b.onclick=()=>{
+  snapshot(); STATE.modo = b.dataset.m; syncToolbar(); render();
+});
+selD.onchange = ()=>{ snapshot(); STATE.destaque = +selD.value; render(); };
+
+/* ocultar controles para o print */
+document.getElementById("btnCtrl").onclick = function(){
+  story.classList.toggle("sem-controles");
+  const off = story.classList.contains("sem-controles");
+  this.textContent = off ? "🎛️ Mostrar controles" : "🎛️ Ocultar controles p/ print";
+};
+
+/* destaque select */
+selD.innerHTML = STATE.produtos.map((p,i)=>`<option value="${i}">${p.nome}</option>`).join("");
+
+syncToolbar();
+render();
+</script>
+</body>
+</html>

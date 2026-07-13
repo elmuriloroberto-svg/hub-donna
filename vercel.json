@@ -8,6 +8,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/encartes", "destination": "/estudio-encartes.html" },
     { "source": "/(.*)",     "destination": "/donna_hub_v3_index (6).html" }
   ],
   "headers": [

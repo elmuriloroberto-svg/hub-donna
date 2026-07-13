@@ -747,6 +747,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <button class="nb" onclick="nav('usuarios',this)" id="nb-usuarios"><i class="fa-solid fa-users-gear"></i>Gerenciar Usuários</button>
       <button class="nb" onclick="nav('cultura',this)" id="nb-cultura"><i class="fa-solid fa-seedling"></i>Cultura, Missão e Valores</button>
       <button class="nb" onclick="nav('donnaIA',this)" id="nb-donnaIA"><i class="fa-solid fa-robot"></i>Donna IA</button>
+      <button class="nb" onclick="window.open('/encartes','_blank')" id="nb-encartes"><i class="fa-solid fa-palette"></i>Estúdio de Encartes</button>
     </nav>
     <div style="padding:4px 12px">
       <div class="sync-ind" id="sync-status"><i class="fa-solid fa-circle" style="font-size:7px;color:var(--ok)"></i>Conectado</div>
@@ -893,6 +894,13 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
             </div>
             <div class="modal-bd">
               <div class="fld">
+                <label>Tipo de Meta</label>
+                <div style="display:flex;gap:8px">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;flex:1;padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)"><input type="radio" name="ms-tipo" id="ms-tipo-individual" value="individual" checked onchange="onMetaSemanaTipoChange()"><i class="fa-solid fa-user" style="color:var(--dbl);font-size:12px"></i>Por Vendedor</label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;flex:1;padding:7px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04)"><input type="radio" name="ms-tipo" id="ms-tipo-geral" value="geral" onchange="onMetaSemanaTipoChange()"><i class="fa-solid fa-store" style="color:var(--dr);font-size:12px"></i>Meta Geral (Loja)</label>
+                </div>
+              </div>
+              <div class="fld" id="ms-vendedor-fld">
                 <label>Vendedor</label>
                 <select id="ms-vendedor-sel"><option value="">Selecione...</option></select>
               </div>
@@ -2519,9 +2527,9 @@ const LOCAL = {
 
 /* -- RBAC ------------------------------------------- */
 const PERMS = {
-  admin:       ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas','folha','vtvr','ponto','usuarios'],
-  gerente:     ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','processos','metas','ponto'],
-  vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA','ponto'],
+  admin:       ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','encartes','processos','metas','folha','vtvr','ponto','usuarios'],
+  gerente:     ['dashboard','calculadora','tiny','agenda','boletos','recebiveis','clientes','crm','entregas','cultura','donnaIA','encartes','processos','metas','ponto'],
+  vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA','encartes','ponto'],
   colaborador: ['calculadora','ponto'],
 };
 const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Calendário',boletos:'Contas a Pagar',recebiveis:'Recebíveis',clientes:'Clientes',crm:'CRM de Clientes',entregas:'Controle de Entregas',cultura:'Cultura, Missão e Valores',donnaIA:'Donna IA',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Pagamento',vtvr:'VT & VR',ponto:'Folha de Ponto',usuarios:'Gerenciar Usuários'};
@@ -3399,15 +3407,22 @@ function renderMetaSemana() {
 
   const R2 = v => 'R$ ' + parseFloat(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const vendasPorVend = _semanaVendasCache?.por_vendedor || {};
+  const vendasTotal   = parseFloat(_semanaVendasCache?.total) || 0;
 
   body.innerHTML = metas.map((meta, idx) => {
     const metaVal    = parseFloat(meta.meta_valor) || 0;
     const bonusPor10 = parseFloat(meta.bonus_por_dez_porcento) || 0;
+    const isGeral    = meta.tipo === 'geral';
 
-    // Tenta casar o nome do vendedor com os dados do Tiny (normalizado)
-    const normMeta = meta.vendedor_nome.toLowerCase().trim();
-    const vendidoKey = Object.keys(vendasPorVend).find(k => k.toLowerCase().includes(normMeta) || normMeta.includes(k.toLowerCase().trim()));
-    const vendido = vendidoKey ? vendasPorVend[vendidoKey] : 0;
+    let vendido;
+    if (isGeral) {
+      vendido = vendasTotal;
+    } else {
+      // Tenta casar o nome do vendedor com os dados do Tiny (normalizado)
+      const normMeta = meta.vendedor_nome.toLowerCase().trim();
+      const vendidoKey = Object.keys(vendasPorVend).find(k => k.toLowerCase().includes(normMeta) || normMeta.includes(k.toLowerCase().trim()));
+      vendido = vendidoKey ? vendasPorVend[vendidoKey] : 0;
+    }
 
     const pct   = metaVal > 0 ? (vendido / metaVal) * 100 : 0;
     const bonus = Math.floor(pct / 10) * bonusPor10;
@@ -3430,11 +3445,14 @@ function renderMetaSemana() {
       ? 'margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line)'
       : '';
 
+    const showLabel = isGeral || metas.length > 1;
+    const labelText  = isGeral ? '🏪 Meta Geral da Loja' : meta.vendedor_nome;
+
     return `<div style="${separador}">
-      ${metas.length > 1 ? `<div style="font-size:11px;font-weight:700;color:var(--ch);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">${meta.vendedor_nome}</div>` : ''}
+      ${showLabel ? `<div style="font-size:11px;font-weight:700;color:var(--ch);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">${labelText}</div>` : ''}
       <div class="ms-kpi-grid">
         <div class="ms-kpi">
-          <div class="ms-kpi-lbl">Vendido na Semana</div>
+          <div class="ms-kpi-lbl">${isGeral ? 'Vendido pela Loja' : 'Vendido na Semana'}</div>
           <div class="ms-kpi-val" style="color:${fillColor}">${R2(vendido)}</div>
         </div>
         <div class="ms-kpi">
@@ -3463,7 +3481,17 @@ function renderMetaSemana() {
   }).join('');
 }
 
+function onMetaSemanaTipoChange(){
+  const tipo = document.querySelector('input[name="ms-tipo"]:checked')?.value || 'individual';
+  const fld = document.getElementById('ms-vendedor-fld');
+  if (fld) fld.style.display = tipo === 'geral' ? 'none' : '';
+}
+
 async function abrirMetaSemana() {
+  const tipoIndividual = document.getElementById('ms-tipo-individual');
+  if (tipoIndividual) tipoIndividual.checked = true;
+  onMetaSemanaTipoChange();
+
   const sel = document.getElementById('ms-vendedor-sel');
   if (sel) {
     const vendedores = S.users.filter(u => u.ativo !== false);
@@ -3485,11 +3513,12 @@ async function abrirMetaSemana() {
 }
 
 async function salvarMetaSemana() {
+  const tipo = document.querySelector('input[name="ms-tipo"]:checked')?.value || 'individual';
   const vendedor_nome        = document.getElementById('ms-vendedor-sel')?.value?.trim();
   const meta_valor           = document.getElementById('ms-meta-input')?.value;
   const bonus_por_dez_porcento = document.getElementById('ms-bonus-input')?.value || '0';
 
-  if (!vendedor_nome)  { toast('Selecione um vendedor','fa-circle-exclamation'); return; }
+  if (tipo === 'individual' && !vendedor_nome) { toast('Selecione um vendedor','fa-circle-exclamation'); return; }
   if (!meta_valor || parseFloat(meta_valor) <= 0) { toast('Informe a meta (valor > 0)','fa-circle-exclamation'); return; }
 
   const data_inicio = document.getElementById('ms-inicio-input')?.value;
@@ -3498,17 +3527,26 @@ async function salvarMetaSemana() {
     toast('Data fim não pode ser antes da data início','fa-circle-exclamation'); return;
   }
 
+  const body = {
+    tipo,
+    meta_valor: parseFloat(meta_valor),
+    bonus_por_dez_porcento: parseFloat(bonus_por_dez_porcento),
+    data_inicio: data_inicio || undefined,
+    data_fim: data_fim || undefined,
+  };
+  if (tipo === 'individual') body.vendedor_nome = vendedor_nome;
+
   try {
     const r = await fetch('/api/metas/semana', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vendedor_nome, meta_valor: parseFloat(meta_valor), bonus_por_dez_porcento: parseFloat(bonus_por_dez_porcento), data_inicio: data_inicio || undefined, data_fim: data_fim || undefined }),
+      body: JSON.stringify(body),
     });
     const json = await r.json();
     if (!json.ok) throw new Error(json.msg);
     closeModal('modal-meta-semana');
-    toast('Meta semanal salva!','fa-fire-flame-curved');
+    toast(tipo === 'geral' ? 'Meta geral da loja salva!' : 'Meta semanal salva!','fa-fire-flame-curved');
     _metaSemanaCache = null;
     await loadMetaSemana();
   } catch(e) {

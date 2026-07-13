@@ -4,6 +4,7 @@ const { authenticateToken, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 const isUUID = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const GERAL_SENTINEL = '__GERAL__';
 
 function semanaAtual() {
   const hoje = new Date();
@@ -27,24 +28,34 @@ router.get('/semana', authenticateToken, async (req, res) => {
     const sb = getSupabase();
 
     // Retorna metas onde data_inicio <= hoje <= data_fim
-    let query = sb.from('metas_semanais').select('*')
+    const { data: rows, error } = await sb.from('metas_semanais').select('*')
       .lte('data_inicio', hoje)
-      .gte('data_fim', hoje)
-      .order('vendedor_nome');
-    if (req.user.role === 'vendedor') {
-      query = query.ilike('vendedor_nome', `%${req.user.nome || req.user.login}%`);
-    }
-
-    const { data, error } = await query;
+      .gte('data_fim', hoje);
     if (error) throw new Error(error.message);
 
+    let data = rows || [];
+
+    // vendedor vê a meta geral da loja + a própria meta individual (fuzzy por nome)
+    if (req.user.role === 'vendedor') {
+      const nome = (req.user.nome || req.user.login || '').toLowerCase().trim();
+      data = data.filter((m) =>
+        m.tipo === 'geral' || m.vendedor_nome.toLowerCase().includes(nome)
+      );
+    }
+
+    // Meta geral sempre primeiro, depois individuais em ordem alfabética
+    data.sort((a, b) => {
+      if (a.tipo !== b.tipo) return a.tipo === 'geral' ? -1 : 1;
+      return a.vendedor_nome.localeCompare(b.vendedor_nome, 'pt-BR');
+    });
+
     // Retorna também as datas reais do período encontrado (para o frontend buscar Tiny com as datas certas)
-    const primeiro = data?.[0];
+    const primeiro = data[0];
     const periodo = primeiro
       ? { inicio: primeiro.data_inicio, fim: primeiro.data_fim }
       : semanaAtual();
 
-    res.json({ ok: true, data: data || [], semana: periodo });
+    res.json({ ok: true, data, semana: periodo });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao buscar metas semanais' });
@@ -55,8 +66,16 @@ router.get('/semana', authenticateToken, async (req, res) => {
 // Aceita data_inicio e data_fim customizados no body; padrão = semana atual
 router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (req, res) => {
   try {
-    const { vendedor_nome, meta_valor, bonus_por_dez_porcento, data_inicio, data_fim } = req.body;
-    if (!vendedor_nome || meta_valor == null || meta_valor === '')
+    const { tipo: tipoRaw, vendedor_nome, meta_valor, bonus_por_dez_porcento, data_inicio, data_fim } = req.body;
+    const tipo = tipoRaw === 'geral' ? 'geral' : 'individual';
+
+    let vendedorFinal = GERAL_SENTINEL;
+    if (tipo === 'individual') {
+      if (!vendedor_nome || !vendedor_nome.trim())
+        return res.status(400).json({ ok: false, msg: 'Vendedor e meta são obrigatórios' });
+      vendedorFinal = vendedor_nome.trim();
+    }
+    if (meta_valor == null || meta_valor === '')
       return res.status(400).json({ ok: false, msg: 'Vendedor e meta são obrigatórios' });
 
     const metaNum  = parseFloat(meta_valor);
@@ -75,7 +94,8 @@ router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (
     const sb = getSupabase();
     const { error } = await sb.from('metas_semanais').upsert(
       {
-        vendedor_nome: vendedor_nome.trim(),
+        vendedor_nome: vendedorFinal,
+        tipo,
         meta_valor:    metaNum,
         bonus_por_dez_porcento: bonusNum,
         data_inicio:   inicio,
@@ -87,7 +107,11 @@ router.post('/semana', authenticateToken, authorize('admin', 'gerente'), async (
     );
     if (error) throw new Error(error.message);
 
-    res.json({ ok: true, msg: 'Meta semanal salva!', periodo: { inicio, fim } });
+    res.json({
+      ok: true,
+      msg: tipo === 'geral' ? 'Meta geral da loja salva!' : 'Meta semanal salva!',
+      periodo: { inicio, fim },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, msg: 'Erro ao salvar meta semanal' });
