@@ -120,7 +120,15 @@ header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
 .foto.tem-img{border-style:solid;background-color:#ffffff}
 .foto.tem-img svg{display:none}
 .foto svg{width:30px;height:30px;opacity:.55}
-.foto img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
+/* Foto renderizada como background-size:contain (não <img object-fit>): o
+   html2canvas não implementa object-fit e estica a imagem pra preencher o
+   container, achatando o produto só no download — background-size ele
+   respeita corretamente. */
+.foto-img{
+  position:absolute;inset:0;width:100%;height:100%;
+  background-repeat:no-repeat;background-position:center center;background-size:contain;
+  pointer-events:none;
+}
 .zoom-slider{
   position:absolute;left:6px;right:6px;bottom:5px;z-index:5;width:calc(100% - 12px);
   accent-color:#e1479d;height:14px;
@@ -134,11 +142,14 @@ header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
 .de{font-size:9px;font-weight:500;color:var(--de);text-decoration:line-through;margin-top:1px;outline:none}
 .apartir{font-size:8px;font-weight:700;letter-spacing:1.3px;color:var(--apartir);margin-top:1px;text-transform:uppercase;outline:none}
 .por{
-  margin-top:2px;background:var(--pill);color:var(--pill-txt);font-weight:900;font-size:15px;
-  padding:3px 13px;border-radius:999px;box-shadow:var(--pill-shadow);white-space:nowrap;outline:none;
+  margin-top:4px;background:var(--pill);color:var(--pill-txt);font-weight:900;font-size:27px;
+  padding:6px 18px;border-radius:999px;box-shadow:var(--pill-shadow),0 0 0 3px rgba(255,255,255,.6) inset;
+  white-space:nowrap;outline:none;letter-spacing:-.3px;
 }
-.por sup{font-size:9px;font-weight:700;margin-right:2px}
-.por .cents{vertical-align:super;font-size:9px}
+/* unidades em "em": tamanho de R$ e dos centavos acompanha o .por de cada
+   contexto (coletivo/individual/feed) sem precisar repetir por breakpoint */
+.por sup{font-size:.42em;font-weight:700;margin-right:2px;vertical-align:super}
+.por .cents{vertical-align:baseline;font-size:.56em;font-weight:800;margin-left:1px}
 .off{
   position:absolute;top:-8px;right:-6px;background:var(--badge);color:var(--badge-txt);
   font-weight:900;font-size:11px;padding:5px 8px;border-radius:999px;
@@ -165,9 +176,7 @@ header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
 .story[data-modo="individual"] .pnome{font-size:19px;margin-top:12px}
 .story[data-modo="individual"] .de{font-size:15px;margin-top:5px}
 .story[data-modo="individual"] .apartir{font-size:12px;margin-top:5px}
-.story[data-modo="individual"] .por{font-size:34px;padding:8px 26px;margin-top:7px}
-.story[data-modo="individual"] .por sup{font-size:16px}
-.story[data-modo="individual"] .por .cents{font-size:17px}
+.story[data-modo="individual"] .por{font-size:50px;padding:12px 38px;margin-top:9px}
 .story[data-modo="individual"] .off{font-size:16px;padding:8px 12px;top:-10px;right:-8px}
 
 /* footer */
@@ -190,13 +199,13 @@ footer{
 .story[data-fmt="feed"] .grid{grid-template-columns:1fr 1fr 1fr;gap:10px;padding:9px 16px 3px}
 .story[data-fmt="feed"] .foto{min-height:85px}
 .story[data-fmt="feed"] .pnome{font-size:9px}
-.story[data-fmt="feed"] .por{font-size:14px;padding:3px 11px}
+.story[data-fmt="feed"] .por{font-size:23px;padding:6px 16px}
 .story[data-fmt="feed"] footer{margin:4px 16px 12px;padding:7px 12px 6px}
 .story[data-fmt="feed"] .regras{font-size:6px}
 .story[data-fmt="feed"][data-modo="individual"] .grid{padding:9px 130px 3px}
 .story[data-fmt="feed"][data-modo="individual"] .foto{min-height:150px}
 .story[data-fmt="feed"][data-modo="individual"] .pnome{font-size:16px}
-.story[data-fmt="feed"][data-modo="individual"] .por{font-size:27px}
+.story[data-fmt="feed"][data-modo="individual"] .por{font-size:38px}
 
 [contenteditable]:hover{box-shadow:0 0 0 1px rgba(0,0,0,.12);border-radius:4px}
 [contenteditable]:focus{box-shadow:0 0 0 2px #e1479d;border-radius:4px}
@@ -499,7 +508,7 @@ function render(){
       <button class="badge-toggle" title="${mostraOff?"Ocultar selo de desconto":"Adicionar selo de desconto"}">${mostraOff?"🚫":"🏷️"}</button>
       ${mostraOff?`<div class="off" contenteditable="true" data-f="off">${p.off}</div>`:""}
       <div class="foto ${p.img?"tem-img":""}" title="Clique para subir a foto">
-        ${p.img ? `<img src="${p.img}" style="transform:scale(${p.zoom||1});transform-origin:center">` : ICON}
+        ${p.img ? `<div class="foto-img" style="background-image:url('${p.img}');transform:scale(${p.zoom||1});transform-origin:center"></div>` : ICON}
         ${p.img ? `<input type="range" class="zoom-slider" min="1" max="3" step="0.05" value="${p.zoom||1}" title="Zoom da foto">` : ""}
       </div>
       <div class="pnome" contenteditable="true" data-f="nome">${p.nome}</div>
@@ -531,8 +540,8 @@ function render(){
       zoomSlider.addEventListener("click", e=> e.stopPropagation());
       zoomSlider.addEventListener("input", ()=>{
         p.zoom = parseFloat(zoomSlider.value);
-        const img = el.querySelector(".foto img");
-        if(img) img.style.transform = `scale(${p.zoom})`;
+        const fotoImg = el.querySelector(".foto-img");
+        if(fotoImg) fotoImg.style.transform = `scale(${p.zoom})`;
       });
     }
 
