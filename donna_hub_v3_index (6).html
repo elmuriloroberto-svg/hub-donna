@@ -747,7 +747,7 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
       <button class="nb" onclick="nav('usuarios',this)" id="nb-usuarios"><i class="fa-solid fa-users-gear"></i>Gerenciar Usuários</button>
       <button class="nb" onclick="nav('cultura',this)" id="nb-cultura"><i class="fa-solid fa-seedling"></i>Cultura, Missão e Valores</button>
       <button class="nb" onclick="nav('donnaIA',this)" id="nb-donnaIA"><i class="fa-solid fa-robot"></i>Donna IA</button>
-      <button class="nb" onclick="window.open('/encartes','_blank')" id="nb-encartes"><i class="fa-solid fa-palette"></i>Estúdio de Encartes</button>
+      <button class="nb" onclick="nav('encartes',this)" id="nb-encartes"><i class="fa-solid fa-palette"></i>Estúdio de Encartes</button>
     </nav>
     <div style="padding:4px 12px">
       <div class="sync-ind" id="sync-status"><i class="fa-solid fa-circle" style="font-size:7px;color:var(--ok)"></i>Conectado</div>
@@ -1680,6 +1680,11 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
         </div>
       </div>
 
+      <!-- ESTÚDIO DE ENCARTES -->
+      <div class="page" id="pg-encartes">
+        <iframe src="/encartes" title="Estúdio de Encartes" style="width:100%;flex:1;min-height:80vh;border:none;border-radius:12px;background:#fff"></iframe>
+      </div>
+
       <!-- USUÁRIOS -->
       <div class="page" id="pg-usuarios">
         <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
@@ -2532,8 +2537,8 @@ const PERMS = {
   vendedor:    ['dashboard','calculadora','agenda','clientes','crm','cultura','donnaIA','encartes','ponto'],
   colaborador: ['calculadora','ponto'],
 };
-const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Calendário',boletos:'Contas a Pagar',recebiveis:'Recebíveis',clientes:'Clientes',crm:'CRM de Clientes',entregas:'Controle de Entregas',cultura:'Cultura, Missão e Valores',donnaIA:'Donna IA',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Pagamento',vtvr:'VT & VR',ponto:'Folha de Ponto',usuarios:'Gerenciar Usuários'};
-const BCS    = {dashboard:'Vendas & CRM',calculadora:'Operacional',tiny:'Vendas & CRM',agenda:'Gestão & Equipe',boletos:'Financeiro',recebiveis:'Financeiro',clientes:'Vendas & CRM',crm:'Vendas & CRM',entregas:'Operacional',cultura:'Administração',donnaIA:'Administração',processos:'Gestão & Equipe',metas:'Gestão & Equipe',folha:'Gestão & Equipe',vtvr:'Gestão & Equipe',ponto:'Gestão & Equipe',usuarios:'Administração'};
+const TITLES = {dashboard:'Dashboard',calculadora:'Calculadora & Etiquetas',tiny:'Pedidos Inteligentes',agenda:'Calendário',boletos:'Contas a Pagar',recebiveis:'Recebíveis',clientes:'Clientes',crm:'CRM de Clientes',entregas:'Controle de Entregas',cultura:'Cultura, Missão e Valores',donnaIA:'Donna IA',encartes:'Estúdio de Encartes',processos:'Processos (Wiki)',metas:'Metas',folha:'Folha de Pagamento',vtvr:'VT & VR',ponto:'Folha de Ponto',usuarios:'Gerenciar Usuários'};
+const BCS    = {dashboard:'Vendas & CRM',calculadora:'Operacional',tiny:'Vendas & CRM',agenda:'Gestão & Equipe',boletos:'Financeiro',recebiveis:'Financeiro',clientes:'Vendas & CRM',crm:'Vendas & CRM',entregas:'Operacional',cultura:'Administração',donnaIA:'Administração',encartes:'Marketing',processos:'Gestão & Equipe',metas:'Gestão & Equipe',folha:'Gestão & Equipe',vtvr:'Gestão & Equipe',ponto:'Gestão & Equipe',usuarios:'Administração'};
 
 /* -- AUTH ------------------------------------------- */
 async function handleLogin() {
