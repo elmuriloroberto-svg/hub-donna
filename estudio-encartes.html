@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Donna Unha — Estúdio de Encartes v2</title>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;500;700;900&display=swap');
 
@@ -22,8 +23,26 @@ body{
 }
 .chip.on{background:#e95655;border-color:#e95655;color:#fff;font-weight:700}
 .chip:disabled{opacity:.4;cursor:default}
+.chip-export{background:#2c8a54;border-color:#2c8a54;color:#fff;font-weight:700}
+.chip-export:hover{background:#236e43}
+.chip-export:disabled{background:#e3ccd6;border-color:#e3ccd6;color:#8a6b78}
 select.chip{padding:6px 8px}
-.dica{font-size:11px;color:#8a6b78;text-align:center;max-width:640px}
+.dica{font-size:11px;color:#8a6b78;text-align:center;max-width:680px}
+
+/* ===== painel de configurações unificado ===== */
+.cfg-wrap{position:relative}
+.cfg-panel{
+  display:none;position:absolute;top:calc(100% + 8px);left:0;z-index:30;
+  background:#fff;border:1px solid #e3ccd6;border-radius:14px;padding:14px;
+  box-shadow:0 14px 34px rgba(60,20,40,.18);min-width:230px;
+}
+.cfg-panel.open{display:flex;flex-direction:column;gap:11px}
+.cfg-row{display:flex;flex-direction:column;gap:4px}
+.cfg-row label{font-size:10px;font-weight:700;letter-spacing:.5px;color:#8a6b78;text-transform:uppercase}
+.cfg-row select{
+  padding:7px 9px;border-radius:8px;border:1px solid #e3ccd6;
+  font-size:12.5px;font-family:inherit;color:#3d2230;background:#fff;cursor:pointer;
+}
 
 /* ============ TEMAS ============ */
 .story{
@@ -86,6 +105,84 @@ select.chip{padding:6px 8px}
   --apartir:#e07a2e;
   --foot:linear-gradient(180deg,#f08a5c,#e95655);
 }
+.story[data-theme="agosto"]{
+  --bg:linear-gradient(160deg,#2b3a55 0%,#1e2a42 55%,#141c2e 100%);
+  --glow1:rgba(201,162,90,.22);--glow2:rgba(43,58,85,.35);
+  --marca:#f3e8d8;--slogan:#c9a25a;
+  --title-grad:linear-gradient(180deg,#e8c98a 0%,#c9a25a 50%,#8a6a2f 100%);
+  --title-shadow:drop-shadow(0 0 10px rgba(201,162,90,.4)) drop-shadow(0 3px 6px rgba(0,0,0,.5));
+  --card-a:#1e2a42;--card-b:#25324c;
+  --card-shadow:0 10px 24px rgba(0,0,0,.45),0 0 0 1px rgba(201,162,90,.18);
+  --foto-border:#3d4d6b;--foto-bg:linear-gradient(180deg,#25324c,#1e2a42);--foto-ico:#c9a25a;
+  --nome:#f3e8d8;--de:#8b96ab;
+  --pill:linear-gradient(180deg,#c9a25a,#8a6a2f);--pill-txt:#1e2a42;--pill-shadow:0 4px 12px rgba(201,162,90,.4);
+  --badge:linear-gradient(180deg,#c9a25a,#8a6a2f);--badge-txt:#1e2a42;
+  --apartir:#c9a25a;
+  --foot:linear-gradient(180deg,#1e2a42,#141c2e);--foot-txt:#f3e8d8;
+}
+.story[data-theme="setembro"]{
+  --bg:linear-gradient(160deg,#eaffea 0%,#c8f0d0 45%,#ffd6e8 100%);
+  --glow1:rgba(120,200,140,.28);--glow2:rgba(255,182,213,.3);
+  --marca:#234d33;--slogan:#234d33;
+  --title-grad:linear-gradient(180deg,#6fcf8e 0%,#3ba86a 55%,#2c8a54 100%);
+  --title-shadow:drop-shadow(0 3px 0 rgba(255,255,255,.7)) drop-shadow(0 6px 10px rgba(60,140,90,.3));
+  --card-a:#ffffff;--card-b:#eafff1;
+  --card-shadow:0 8px 20px rgba(60,140,90,.16),0 2px 5px rgba(60,140,90,.10);
+  --foto-border:#a9e8bd;--foto-bg:linear-gradient(180deg,#fff,#f1fff5);--foto-ico:#3ba86a;
+  --nome:#234d33;--de:#8aa793;
+  --pill:linear-gradient(180deg,#ff8fab,#f4628c);--pill-txt:#fff;--pill-shadow:0 4px 10px rgba(244,98,140,.4);
+  --badge:linear-gradient(180deg,#3ba86a,#2c8a54);--badge-txt:#fff;
+  --apartir:#2c8a54;
+  --foot:linear-gradient(180deg,#3ba86a,#2c8a54);--foot-txt:#fff;
+}
+.story[data-theme="outubro"]{
+  --bg:radial-gradient(circle at 80% 15%,rgba(255,140,20,.25),transparent 45%),
+       radial-gradient(circle at 15% 85%,rgba(130,40,200,.22),transparent 45%),
+       linear-gradient(170deg,#1a1220 0%,#120c18 100%);
+  --glow1:transparent;--glow2:transparent;
+  --marca:#ffd9a8;--slogan:#c9a2ff;
+  --title-grad:linear-gradient(180deg,#ff9d3c 0%,#ff6a1f 45%,#8a2be2 110%);
+  --title-shadow:drop-shadow(0 0 14px rgba(255,120,20,.5)) drop-shadow(0 3px 6px rgba(0,0,0,.6));
+  --card-a:#20162a;--card-b:#271b32;
+  --card-shadow:0 10px 24px rgba(0,0,0,.5),0 0 0 1px rgba(255,140,20,.22);
+  --foto-border:#4d3566;--foto-bg:linear-gradient(180deg,#271b32,#20162a);--foto-ico:#ff9d3c;
+  --nome:#f5ecff;--de:#9885ab;
+  --pill:linear-gradient(180deg,#ff9d3c,#e2650f);--pill-txt:#1a1220;--pill-shadow:0 4px 14px rgba(255,140,20,.5);
+  --badge:linear-gradient(180deg,#8a2be2,#5c1a9c);--badge-txt:#fff;
+  --apartir:#ff9d3c;
+  --foot:linear-gradient(180deg,#2a1c38,#1a1220);--foot-txt:#ffd9a8;
+}
+.story[data-theme="novembro"]{
+  --bg:radial-gradient(circle at 85% 10%,rgba(255,30,60,.22),transparent 45%),
+       linear-gradient(170deg,#141414 0%,#0a0a0a 100%);
+  --glow1:transparent;--glow2:transparent;
+  --marca:#f2f2f2;--slogan:#ff3355;
+  --title-grad:linear-gradient(180deg,#ffffff 0%,#ff3355 60%,#c8102e 110%);
+  --title-shadow:drop-shadow(0 0 16px rgba(255,51,85,.55)) drop-shadow(0 3px 6px rgba(0,0,0,.7));
+  --card-a:#1a1a1a;--card-b:#202020;
+  --card-shadow:0 10px 24px rgba(0,0,0,.55),0 0 0 1px rgba(255,51,85,.25);
+  --foto-border:#3a3a3a;--foto-bg:linear-gradient(180deg,#202020,#1a1a1a);--foto-ico:#ff3355;
+  --nome:#f2f2f2;--de:#8f8f8f;
+  --pill:linear-gradient(180deg,#ff3355,#c8102e);--pill-txt:#fff;--pill-shadow:0 4px 16px rgba(255,51,85,.5);
+  --badge:linear-gradient(180deg,#ffffff,#d8d8d8);--badge-txt:#0a0a0a;
+  --apartir:#ff3355;
+  --foot:linear-gradient(180deg,#1a1a1a,#0a0a0a);--foot-txt:#f2f2f2;
+}
+.story[data-theme="dezembro"]{
+  --bg:linear-gradient(160deg,#1e4d33 0%,#0f3320 55%,#0a2417 100%);
+  --glow1:rgba(212,175,55,.22);--glow2:rgba(199,42,58,.25);
+  --marca:#fdf3e0;--slogan:#d4af37;
+  --title-grad:linear-gradient(180deg,#f4d97a 0%,#d4af37 45%,#c72a3a 110%);
+  --title-shadow:drop-shadow(0 0 12px rgba(212,175,55,.45)) drop-shadow(0 3px 6px rgba(0,0,0,.55));
+  --card-a:#0f3320;--card-b:#143d28;
+  --card-shadow:0 10px 24px rgba(0,0,0,.45),0 0 0 1px rgba(212,175,55,.2);
+  --foto-border:#2f5c42;--foto-bg:linear-gradient(180deg,#143d28,#0f3320);--foto-ico:#d4af37;
+  --nome:#fdf3e0;--de:#8fae9c;
+  --pill:linear-gradient(180deg,#c72a3a,#8f1e2b);--pill-txt:#fff;--pill-shadow:0 4px 14px rgba(199,42,58,.45);
+  --badge:linear-gradient(180deg,#d4af37,#a9842a);--badge-txt:#0a2417;
+  --apartir:#d4af37;
+  --foot:linear-gradient(180deg,#c72a3a,#8f1e2b);--foot-txt:#fdf3e0;
+}
 
 /* ============ ARTE ============ */
 .story{
@@ -136,11 +233,17 @@ header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
   border:2px dashed var(--foto-border);
   display:flex;align-items:center;justify-content:center;
   color:var(--foto-ico);background:var(--foto-bg);
-  background-size:cover;background-position:center;cursor:pointer;overflow:hidden;
+  cursor:pointer;overflow:hidden;position:relative;
 }
-.foto.tem-img{border-style:solid}
+.foto.tem-img{border-style:solid;background-color:#ffffff}
 .foto.tem-img svg{display:none}
 .foto svg{width:30px;height:30px;opacity:.55}
+.foto img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
+.zoom-slider{
+  position:absolute;left:6px;right:6px;bottom:5px;z-index:5;width:calc(100% - 12px);
+  accent-color:#e1479d;height:14px;
+}
+.story.sem-controles .zoom-slider{display:none}
 .pnome{
   margin-top:5px;text-align:center;font-weight:700;font-size:9.5px;line-height:1.15;
   letter-spacing:.2px;text-transform:uppercase;color:var(--nome);outline:none;
@@ -160,15 +263,17 @@ header{position:relative;text-align:center;padding:22px 20px 6px;z-index:2}
   box-shadow:0 4px 9px rgba(0,0,0,.28);transform:rotate(8deg);z-index:3;outline:none;
 }
 
-/* botão de alternar tipo de preço (controle de edição) */
-.ctrl{
-  position:absolute;top:-8px;left:-6px;z-index:4;
+/* botões de controle (edição) */
+.ctrl,.badge-toggle{
+  position:absolute;z-index:4;
   width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;
   background:#3d2230;color:#fff;font-size:13px;line-height:1;
   box-shadow:0 3px 8px rgba(0,0,0,.35);
 }
-.ctrl:hover{background:#e1479d}
-.story.sem-controles .ctrl{display:none}
+.ctrl{top:-8px;left:-6px}
+.badge-toggle{bottom:-8px;left:-6px;font-size:11px;width:24px;height:24px}
+.ctrl:hover,.badge-toggle:hover{background:#e1479d}
+.story.sem-controles .ctrl,.story.sem-controles .badge-toggle{display:none}
 
 /* modo individual */
 .story[data-modo="individual"] .grid{display:flex;align-items:stretch;justify-content:center;padding:12px 34px 6px}
@@ -219,27 +324,49 @@ footer{
 <body>
 
 <div class="bar">
-  <span class="lbl">Tema</span>
-  <button class="chip" data-t="maio">Maio na Donna</button>
-  <button class="chip" data-t="namorados">Namorados/Junina</button>
-  <button class="chip on" data-t="julho">Julho na Donna</button>
-  <button class="chip" data-t="black">Black Donna</button>
-  <button class="chip" data-t="verao">Verão Donna</button>
-</div>
-<div class="bar">
-  <span class="lbl">Formato</span>
-  <button class="chip on" data-f="story">Story 9:16</button>
-  <button class="chip" data-f="feed">Feed 1:1</button>
-  <span class="lbl" style="margin-left:8px">Modo</span>
-  <button class="chip on" data-m="coletivo">Coletivo</button>
-  <button class="chip" data-m="individual">Individual</button>
-  <select class="chip" id="selDestaque" style="display:none"></select>
-</div>
-<div class="bar">
+  <div class="cfg-wrap">
+    <button class="chip" id="btnCfg">⚙️ Configurações</button>
+    <div class="cfg-panel" id="cfgPanel">
+      <div class="cfg-row">
+        <label>Tema</label>
+        <select id="selTema">
+          <option value="maio">Maio na Donna</option>
+          <option value="namorados">Namorados/Junina</option>
+          <option value="julho">Julho na Donna</option>
+          <option value="black">Black Donna</option>
+          <option value="verao">Verão Donna</option>
+          <option value="agosto">Agosto — Dia dos Pais</option>
+          <option value="setembro">Setembro — Semana do Cliente</option>
+          <option value="outubro">Outubro — Halloween</option>
+          <option value="novembro">Novembro — Black Friday</option>
+          <option value="dezembro">Dezembro — Natal</option>
+        </select>
+      </div>
+      <div class="cfg-row">
+        <label>Formato</label>
+        <select id="selFormato">
+          <option value="story">Story 9:16</option>
+          <option value="feed">Feed 1:1</option>
+        </select>
+      </div>
+      <div class="cfg-row">
+        <label>Modo</label>
+        <select id="selModo">
+          <option value="coletivo">Coletivo (6 produtos)</option>
+          <option value="individual">Individual (1 produto)</option>
+        </select>
+      </div>
+      <div class="cfg-row" id="cfgDestaqueRow" style="display:none">
+        <label>Produto em destaque</label>
+        <select id="selDestaque"></select>
+      </div>
+    </div>
+  </div>
   <button class="chip" id="btnUndo" disabled>↩️ Desfazer</button>
   <button class="chip" id="btnCtrl">🎛️ Ocultar controles p/ print</button>
+  <button class="chip chip-export" id="btnExport">⬇️ Baixar Encarte</button>
 </div>
-<p class="dica">💡 O botão preto <b>⇄</b> em cada card alterna o tipo de preço: <b>DE riscado → A partir de → só o POR</b>. Clique no tracejado para subir a foto. Textos são editáveis. Antes do print, oculte os controles.</p>
+<p class="dica">💡 O botão preto <b>⇄</b> em cada card alterna o tipo de preço: <b>DE riscado → A partir de → só o POR</b>. O botão <b>🏷️</b> mostra/oculta o selo de desconto. Clique no tracejado para subir a foto — depois use a barrinha embaixo dela pra dar zoom. Textos são editáveis. "Baixar Encarte" já esconde os controles, captura e devolve a tela como estava.</p>
 
 <div class="story" data-theme="julho" data-fmt="story" data-modo="coletivo" id="story">
   <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
@@ -265,15 +392,17 @@ footer{
 "use strict";
 
 /* ===== MODELO =====
-   modoPreco: "de" (preço antigo riscado) | "apartir" | "so" (apenas o POR) */
+   modoPreco: "de" (preço antigo riscado) | "apartir" | "so" (apenas o POR)
+   zoom: fator de zoom da foto (1 = normal, até 3 = 3x)
+   showBadge: false oculta o selo "-X%" sem apagar o valor (default true) */
 const STATE = {
   produtos: [
-    {nome:"Gel Blume 30g",            de:"DE R$ 99,99", porInt:"89", porCents:",99", off:"-10%", modoPreco:"de",      img:null},
-    {nome:"Esmaltes em Gel",          de:"DE R$ 0,00",  porInt:"7",  porCents:",99", off:null,   modoPreco:"apartir", img:null},
-    {nome:"Spray Secante Mood 400ml", de:"DE R$ 15,90", porInt:"13", porCents:",19", off:null,   modoPreco:"de",      img:null},
-    {nome:"Esmalte Risqué 8ml",       de:"DE R$ 0,00",  porInt:"4",  porCents:",99", off:null,   modoPreco:"apartir", img:null},
-    {nome:"Esmalte Impala 7,5ml",     de:"DE R$ 0,00",  porInt:"3",  porCents:",79", off:null,   modoPreco:"apartir", img:null},
-    {nome:"Acetona Monaly 500ml",     de:"DE R$ 12,90", porInt:"10", porCents:",99", off:"-15%", modoPreco:"de",      img:null}
+    {nome:"Gel Blume 30g",            de:"DE R$ 99,99", porInt:"89", porCents:",99", off:"-10%", modoPreco:"de",      img:null, zoom:1, showBadge:true},
+    {nome:"Esmaltes em Gel",          de:"DE R$ 0,00",  porInt:"7",  porCents:",99", off:null,   modoPreco:"apartir", img:null, zoom:1, showBadge:true},
+    {nome:"Spray Secante Mood 400ml", de:"DE R$ 15,90", porInt:"13", porCents:",19", off:null,   modoPreco:"de",      img:null, zoom:1, showBadge:true},
+    {nome:"Esmalte Risqué 8ml",       de:"DE R$ 0,00",  porInt:"4",  porCents:",99", off:null,   modoPreco:"apartir", img:null, zoom:1, showBadge:true},
+    {nome:"Esmalte Impala 7,5ml",     de:"DE R$ 0,00",  porInt:"3",  porCents:",79", off:null,   modoPreco:"apartir", img:null, zoom:1, showBadge:true},
+    {nome:"Acetona Monaly 500ml",     de:"DE R$ 12,90", porInt:"10", porCents:",99", off:"-15%", modoPreco:"de",      img:null, zoom:1, showBadge:true}
   ],
   titulo:'Julho <small>na Donna</small>',
   regras:null, // preenchido no boot a partir do HTML
@@ -285,15 +414,27 @@ const TITULOS = {
   namorados:'Especial <small>Namorados</small>',
   julho:'Julho <small>na Donna</small>',
   black:'Black <small>Donna</small>',
-  verao:'Verão <small>Donna Unha</small>'
+  verao:'Verão <small>Donna Unha</small>',
+  agosto:'Especial <small>Dia dos Pais</small>',
+  setembro:'Semana do <small>Cliente</small>',
+  outubro:'Halloween <small>na Donna</small>',
+  novembro:'Black <small>Friday</small>',
+  dezembro:'Natal <small>na Donna</small>'
 };
 
-const story = document.getElementById("story");
-const grid  = document.getElementById("grid");
-const selD  = document.getElementById("selDestaque");
-const elTit = document.getElementById("titulo");
-const elReg = document.getElementById("regras");
+const story  = document.getElementById("story");
+const grid   = document.getElementById("grid");
+const selD   = document.getElementById("selDestaque");
+const elTit  = document.getElementById("titulo");
+const elReg  = document.getElementById("regras");
 const btnUndo = document.getElementById("btnUndo");
+
+const btnCfg   = document.getElementById("btnCfg");
+const cfgPanel = document.getElementById("cfgPanel");
+const selTema    = document.getElementById("selTema");
+const selFormato = document.getElementById("selFormato");
+const selModo    = document.getElementById("selModo");
+const cfgDestaqueRow = document.getElementById("cfgDestaqueRow");
 
 STATE.regras = elReg.innerHTML;
 
@@ -328,23 +469,29 @@ function render(){
   elReg.innerHTML = STATE.regras;
 
   grid.innerHTML = "";
-  const lista = (STATE.modo==="individual")
-    ? [STATE.produtos[STATE.destaque]]
-    : STATE.produtos.slice(0,6);
+  const indices = (STATE.modo==="individual")
+    ? [STATE.destaque]
+    : STATE.produtos.slice(0,6).map((_,i)=>i);
 
-  lista.forEach(p=>{
+  indices.forEach(realIdx=>{
+    const p = STATE.produtos[realIdx];
     const el = document.createElement("div");
     el.className = "card";
+    const mostraOff = !!p.off && p.showBadge !== false;
     el.innerHTML = `
       <button class="ctrl" title="Alternar: DE riscado → A partir de → só o POR">⇄</button>
-      ${p.off?`<div class="off" contenteditable="true" data-f="off">${p.off}</div>`:""}
-      <div class="foto ${p.img?"tem-img":""}" style="${p.img?`background-image:url(${p.img})`:""}" title="Clique para subir a foto">${ICON}</div>
+      <button class="badge-toggle" title="${mostraOff?"Ocultar selo de desconto":"Adicionar selo de desconto"}">${mostraOff?"🚫":"🏷️"}</button>
+      ${mostraOff?`<div class="off" contenteditable="true" data-f="off">${p.off}</div>`:""}
+      <div class="foto ${p.img?"tem-img":""}" title="Clique para subir a foto">
+        ${p.img ? `<img src="${p.img}" style="transform:scale(${p.zoom||1});transform-origin:center">` : ICON}
+        ${p.img ? `<input type="range" class="zoom-slider" min="1" max="3" step="0.05" value="${p.zoom||1}" title="Zoom da foto">` : ""}
+      </div>
       <div class="pnome" contenteditable="true" data-f="nome">${p.nome}</div>
       ${p.modoPreco==="de"?`<div class="de" contenteditable="true" data-f="de">${p.de}</div>`:""}
       ${p.modoPreco==="apartir"?`<div class="apartir">A partir de</div>`:""}
       <div class="por"><sup>R$</sup><span contenteditable="true" data-f="porInt">${p.porInt}</span><span class="cents" contenteditable="true" data-f="porCents">${p.porCents}</span></div>`;
 
-    /* foto */
+    /* foto — clique abre seletor de arquivo */
     const foto = el.querySelector(".foto");
     foto.addEventListener("click", ()=>{
       const inp = document.createElement("input");
@@ -352,11 +499,26 @@ function render(){
       inp.onchange = e=>{
         const f=e.target.files[0]; if(!f) return;
         const r=new FileReader();
-        r.onload = ()=>{ snapshot(); p.img=r.result; render(); };
+        r.onload = ()=>{ snapshot(); p.img=r.result; p.zoom=1; render(); };
         r.readAsDataURL(f);
       };
       inp.click();
     });
+
+    /* zoom da foto */
+    const zoomSlider = el.querySelector(".zoom-slider");
+    if(zoomSlider){
+      let snapTaken = false;
+      const startSnap = ()=>{ if(!snapTaken){ snapshot(); snapTaken = true; } };
+      zoomSlider.addEventListener("mousedown", e=>{ e.stopPropagation(); startSnap(); });
+      zoomSlider.addEventListener("touchstart", e=>{ e.stopPropagation(); startSnap(); }, {passive:true});
+      zoomSlider.addEventListener("click", e=> e.stopPropagation());
+      zoomSlider.addEventListener("input", ()=>{
+        p.zoom = parseFloat(zoomSlider.value);
+        const img = el.querySelector(".foto img");
+        if(img) img.style.transform = `scale(${p.zoom})`;
+      });
+    }
 
     /* alternar tipo de preço */
     el.querySelector(".ctrl").addEventListener("click", ()=>{
@@ -364,6 +526,22 @@ function render(){
       p.modoPreco = p.modoPreco==="de" ? "apartir" : p.modoPreco==="apartir" ? "so" : "de";
       render();
     });
+
+    /* mostrar/ocultar (ou criar) selo de desconto */
+    const badgeToggle = el.querySelector(".badge-toggle");
+    if(badgeToggle){
+      badgeToggle.addEventListener("click", ()=>{
+        snapshot();
+        const estaMostrando = !!p.off && p.showBadge !== false;
+        if(estaMostrando){
+          p.showBadge = false;
+        }else{
+          if(!p.off) p.off = "-10%";
+          p.showBadge = true;
+        }
+        render();
+      });
+    }
 
     /* sincronizar edições de texto com o modelo */
     el.querySelectorAll("[data-f]").forEach(n=>{
@@ -378,26 +556,30 @@ function render(){
 elTit.addEventListener("input", ()=>{ STATE.titulo = elTit.innerHTML; });
 elReg.addEventListener("input", ()=>{ STATE.regras = elReg.innerHTML; });
 
-/* ===== TOOLBAR ===== */
+/* ===== PAINEL DE CONFIGURAÇÕES ===== */
+btnCfg.addEventListener("click", e=>{
+  e.stopPropagation();
+  cfgPanel.classList.toggle("open");
+});
+document.addEventListener("click", e=>{
+  if(!cfgPanel.contains(e.target) && e.target!==btnCfg) cfgPanel.classList.remove("open");
+});
+
 function syncToolbar(){
-  document.querySelectorAll("[data-t]").forEach(b=>b.classList.toggle("on", b.dataset.t===STATE.theme));
-  document.querySelectorAll("[data-f]").forEach(b=>{ if(b.tagName==="BUTTON") b.classList.toggle("on", b.dataset.f===STATE.fmt); });
-  document.querySelectorAll("[data-m]").forEach(b=>b.classList.toggle("on", b.dataset.m===STATE.modo));
-  selD.style.display = STATE.modo==="individual" ? "inline-block" : "none";
+  selTema.value    = STATE.theme;
+  selFormato.value = STATE.fmt;
+  selModo.value    = STATE.modo;
+  cfgDestaqueRow.style.display = STATE.modo==="individual" ? "flex" : "none";
   selD.value = STATE.destaque;
 }
-document.querySelectorAll(".bar [data-t]").forEach(b=>b.onclick=()=>{
+selTema.onchange = ()=>{
   snapshot();
-  STATE.theme = b.dataset.t;
-  STATE.titulo = TITULOS[b.dataset.t];
+  STATE.theme = selTema.value;
+  STATE.titulo = TITULOS[selTema.value];
   syncToolbar(); render();
-});
-document.querySelectorAll(".bar button[data-f]").forEach(b=>b.onclick=()=>{
-  snapshot(); STATE.fmt = b.dataset.f; syncToolbar(); render();
-});
-document.querySelectorAll(".bar [data-m]").forEach(b=>b.onclick=()=>{
-  snapshot(); STATE.modo = b.dataset.m; syncToolbar(); render();
-});
+};
+selFormato.onchange = ()=>{ snapshot(); STATE.fmt = selFormato.value; syncToolbar(); render(); };
+selModo.onchange    = ()=>{ snapshot(); STATE.modo = selModo.value; syncToolbar(); render(); };
 selD.onchange = ()=>{ snapshot(); STATE.destaque = +selD.value; render(); };
 
 /* ocultar controles para o print */
@@ -406,6 +588,38 @@ document.getElementById("btnCtrl").onclick = function(){
   const off = story.classList.contains("sem-controles");
   this.textContent = off ? "🎛️ Mostrar controles" : "🎛️ Ocultar controles p/ print";
 };
+
+/* ===== EXPORTAR COMO IMAGEM (JPG) ===== */
+const btnExport = document.getElementById("btnExport");
+btnExport.addEventListener("click", async ()=>{
+  if(typeof html2canvas !== "function"){
+    alert("Não consegui carregar a biblioteca de exportação. Verifique sua conexão com a internet e tente de novo.");
+    return;
+  }
+  const jaEstavaOculto = story.classList.contains("sem-controles");
+  if(!jaEstavaOculto) story.classList.add("sem-controles");
+  btnExport.disabled = true;
+  const textoOriginal = btnExport.textContent;
+  btnExport.textContent = "⏳ Gerando...";
+  // dá um respiro pro navegador aplicar o CSS antes de capturar
+  await new Promise(r=> requestAnimationFrame(()=> requestAnimationFrame(r)));
+  try{
+    const canvas = await html2canvas(story, { scale: 3, useCORS: true, logging: false });
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0,10);
+    link.download = `encarte-donna-unha-${stamp}.jpg`;
+    link.href = canvas.toDataURL("image/jpeg", 0.95);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }catch(err){
+    alert("Erro ao gerar a imagem: " + err.message);
+  }finally{
+    if(!jaEstavaOculto) story.classList.remove("sem-controles");
+    btnExport.disabled = false;
+    btnExport.textContent = textoOriginal;
+  }
+});
 
 /* destaque select */
 selD.innerHTML = STATE.produtos.map((p,i)=>`<option value="${i}">${p.nome}</option>`).join("");
