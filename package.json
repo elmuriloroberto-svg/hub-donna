@@ -1,6 +1,6 @@
 {
   "name": "donna-unha-hub",
-  "version": "13.6.0",
+  "version": "13.7.0",
   "private": true,
   "scripts": {
     "dev": "cd backend && npm run dev",
