@@ -4130,50 +4130,56 @@ let _editingFolhaId = null;
 let _sbScrollPos = 0;
 
 function loadPedidosManuais() {
-  _pedidosManuais = dbGet('pedidos_manuais', []);
-  renderPedidosManuais();
-  fetch('/api/db', {credentials:'include'}).then(r=>r.json()).then(({ok,data})=>{
-    if (ok && Array.isArray(data?.pedidos_manuais)) {
-      _pedidosManuais = data.pedidos_manuais;
-      dbSet('pedidos_manuais', _pedidosManuais);
+  fetch('/api/pedidos-manuais', {credentials:'include'}).then(r=>r.json()).then(({ok,data})=>{
+    if (ok && Array.isArray(data)) {
+      _pedidosManuais = data.map(p=>({...p, criadoEm:p.created_at, pedidoEm:p.pedido_em}));
       renderPedidosManuais();
     }
   }).catch(()=>{});
 }
 
-function savePedidosManuais() {
-  dbSet('pedidos_manuais', _pedidosManuais);
-  fetch('/api/db', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({pedidos_manuais: _pedidosManuais})}).catch(()=>{});
-}
-
-function addPedidoManual() {
+async function addPedidoManual() {
   const produto = document.getElementById('pm-produto')?.value.trim();
   const qtd = parseInt(document.getElementById('pm-qtd')?.value)||1;
   const obs = document.getElementById('pm-obs')?.value.trim()||'';
   if (!produto) { toast('Digite o produto', 'fa-triangle-exclamation'); return; }
-  _pedidosManuais.unshift({ id:'pm_'+Date.now(), produto, qtd, obs, criadoEm:new Date().toISOString(), pedido:false, pedidoEm:null });
-  savePedidosManuais();
-  document.getElementById('pm-produto').value='';
-  document.getElementById('pm-qtd').value='1';
-  if(document.getElementById('pm-obs'))document.getElementById('pm-obs').value='';
-  renderPedidosManuais();
-  toast('Item adicionado!', 'fa-clipboard-list');
+  try{
+    const r=await fetch('/api/pedidos-manuais', {method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({produto, qtd, obs})});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg||'Erro');
+    document.getElementById('pm-produto').value='';
+    document.getElementById('pm-qtd').value='1';
+    if(document.getElementById('pm-obs'))document.getElementById('pm-obs').value='';
+    toast('Item adicionado!', 'fa-clipboard-list');
+    loadPedidosManuais();
+  }catch(e){
+    toast('Erro ao adicionar: '+e.message, 'fa-triangle-exclamation');
+  }
 }
 
-function togglePedidoManual(id) {
+async function togglePedidoManual(id) {
   if (S.currentUser?.role !== 'admin') { toast('Apenas Admin pode marcar pedido feito', 'fa-lock'); return; }
   const item = _pedidosManuais.find(x=>x.id===id);
   if (!item) return;
-  item.pedido = !item.pedido;
-  item.pedidoEm = item.pedido ? new Date().toISOString() : null;
-  savePedidosManuais();
-  renderPedidosManuais();
+  try{
+    const r=await fetch('/api/pedidos-manuais/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({pedido: !item.pedido})});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg||'Erro');
+    loadPedidosManuais();
+  }catch(e){
+    toast('Erro ao atualizar: '+e.message, 'fa-triangle-exclamation');
+  }
 }
 
-function deletePedidoManual(id) {
-  _pedidosManuais = _pedidosManuais.filter(x=>x.id!==id);
-  savePedidosManuais();
-  renderPedidosManuais();
+async function deletePedidoManual(id) {
+  try{
+    const r=await fetch('/api/pedidos-manuais/'+id, {method:'DELETE', credentials:'include'});
+    const d=await r.json();
+    if(!d.ok) throw new Error(d.msg||'Erro');
+    loadPedidosManuais();
+  }catch(e){
+    toast('Erro ao remover: '+e.message, 'fa-triangle-exclamation');
+  }
 }
 
 function renderPedidosManuais() {

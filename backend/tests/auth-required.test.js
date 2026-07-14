@@ -31,6 +31,8 @@ const PROTECTED_ROUTES = [
   ['get', '/api/tiny/dashboard'],
   ['get', '/api/auth/me'],
   ['put', '/api/auth/password'],
+  ['get', '/api/pedidos-manuais'],
+  ['post', '/api/pedidos-manuais'],
 ];
 
 const PUBLIC_ROUTES = [
