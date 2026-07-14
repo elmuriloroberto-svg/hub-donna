@@ -168,7 +168,7 @@ app.use('/api/processos', apiLimiter,  processosRoutes);
 app.use('/api/entregas',  apiLimiter,  entregasRoutes);
 app.use('/api/folha',     apiLimiter,  folhaRoutes);
 app.use('/api/ponto',     apiLimiter,  pontoRoutes);
-app.use('/api/config',    apiLimiter,  configRoutes);
+app.use('/api/config',    apiLimiter,  noCache, configRoutes);
 app.use('/api/dashboard', apiLimiter,  dashboardRoutes);
 app.use('/api/hub',       apiLimiter,  hubRoutes);
 app.use('/api/chat',      apiLimiter,  chatRoutes);
