@@ -2387,26 +2387,13 @@ function loadLocalData(){
     S.formula.cartao = parseFloat(config.cartao) || S.formula.cartao;
   }
 }
+// Só persiste `clientes` — os únicos chamadores (sync de Clientes via Tiny) só
+// mutam S.clientes. Nunca gravar aqui users/folha/boletos/tasks/processos/entregas:
+// isso reescrevia dados reais e sensíveis em hub_config a cada sync (achado da
+// auditoria 2026-07-13, ver ADR em 04 - Decisões de Arquitetura).
 function saveLocalData(){
-  dbSet('users', S.users);
   dbSet('clientes', S.clientes);
-  dbSet('boletos_p', S.boletos_p);
-  dbSet('boletos_r', S.boletos_r);
-  dbSet('tasks', S.tasks);
-  dbSet('metas', S.metas);
-  dbSet('processos', S.processos);
-  dbSet('entregas', _entregas);
-  dbSet('folha', S.folha);
-  dbSet('config', S.formula);
-  // Persiste no arquivo donna_data.json via servidor
-  const payload = {};
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
-    if(k&&k.startsWith('donna_')){
-      try{payload[k.replace('donna_','')]=JSON.parse(localStorage.getItem(k));}catch{}
-    }
-  }
-  fetch('/api/db',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)}).catch(()=>{});
+  fetch('/api/db',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({clientes: S.clientes})}).catch(()=>{});
 }
 
 async function syncFromServer(){
