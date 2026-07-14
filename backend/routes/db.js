@@ -4,8 +4,16 @@ const { getSupabase } = require('../lib/supabase');
 
 const router = express.Router();
 
-// Chaves acessíveis apenas por admin/gerente
-const RESTRICTED_READ  = new Set(['folha', 'users']);
+// Chaves acessíveis apenas por admin/gerente — contenção temporária: qualquer
+// domínio que tenha (ou já teve) dados reais sensíveis e não seja config de
+// verdade. Um vendedor/colaborador autenticado não pode ler nenhum destes via
+// /api/db, mesmo que a dedicada (/api/users, /api/folha, /api/boletos, etc.)
+// já aplique RBAC corretamente — essa rota genérica não deve ser mais uma porta.
+// TODO: remover junto com /api/db (ver 04 - Decisões de Arquitetura, ADR de
+// eliminação do /api/db, vault Donna Hub v3 - Auditoria 2026-07-13)
+const RESTRICTED_READ  = new Set([
+  'folha', 'users', 'boletos_p', 'boletos_r', 'tasks', 'pedidos_manuais', 'processos', 'entregas',
+]);
 // Chaves que vendedor pode escrever
 const VENDEDOR_WRITE   = new Set(['tasks', 'entregas', 'metas_vendas']);
 // Chaves que nenhum usuário pode sobrescrever via /api/db
