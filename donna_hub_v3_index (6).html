@@ -2305,28 +2305,6 @@ body{font-family:'Outfit',sans-serif;background:var(--dcr);color:var(--ink);min-
 // |  REST API . Auth . RBAC . Donna IA (RAG)           |
 // +======================================================+
 
-/* -- GAS BRIDGE -----------------------------------------
-   Em producao (GAS): usa google.script.run
-   Em demo/dev:       usa dados locais simulados
--------------------------------------------------------- */
-const IS_GAS = (typeof google !== 'undefined' && google.script);
-
-function gasRun(fn, ...args) {
-  return new Promise((resolve, reject) => {
-    if (IS_GAS) {
-      google.script.run
-        .withSuccessHandler(r => resolve(r))
-        .withFailureHandler(e => reject(e))
-        [fn](...args);
-    } else {
-      setTimeout(() => {
-        try { resolve(LOCAL[fn] ? LOCAL[fn](...args) : { ok:true }); }
-        catch(e) { reject(e); }
-      }, 250);
-    }
-  });
-}
-
 /* -- ESTADO GLOBAL ------------------------------------- */
 const S = {
   formula: { custos:22.18, cartao:6.00 },
@@ -2345,7 +2323,7 @@ const S = {
   wikiFilter: 'all',
 };
 
-/* -- LOCAL BACKEND (Demo sem GAS) --------------------- */
+/* -- PERSISTÊNCIA LOCAL (clientes + config; ver ADR-004) ------ */
 function dbGet(key, fallback){
   try{const value=localStorage.getItem('donna_'+key);return value?JSON.parse(value):fallback;}catch(e){return fallback;}
 }
@@ -2361,26 +2339,16 @@ function _purgeDemoData(){
     }catch{}
   });
 }
+// Lê só o que ainda não tem rota dedicada: `clientes` (sync via Tiny, sem
+// endpoint de upsert em massa) e `config` (fórmula de preço). Os demais domínios
+// (users/boletos/tasks/metas/processos/entregas/folha) são carregados por suas
+// APIs próprias (loadUsers/loadBoletos/loadTasks/loadMetas/loadProcessos/
+// loadEntregas/loadFolha) — as leituras legadas daqui eram no-op (nada as
+// gravava desde a Fase 2) e foram removidas no passo 5 da auditoria (15/07).
 function loadLocalData(){
   _purgeDemoData();
-  const users = dbGet('users', null);
-  if(Array.isArray(users) && users.length){ S.users = users; }
   const clientes = dbGet('clientes', null);
   if(Array.isArray(clientes) && clientes.length){ S.clientes = clientes; }
-  const boletosP = dbGet('boletos_p', null);
-  if(Array.isArray(boletosP)) S.boletos_p = boletosP;
-  const boletosR = dbGet('boletos_r', null);
-  if(Array.isArray(boletosR)) S.boletos_r = boletosR;
-  const tasks = dbGet('tasks', null);
-  if(Array.isArray(tasks)) S.tasks = tasks;
-  const metas = dbGet('metas', null);
-  if(Array.isArray(metas)) S.metas = metas;
-  const processos = dbGet('processos', null);
-  if(Array.isArray(processos)) S.processos = processos;
-  const entregas = dbGet('entregas', null);
-  if(Array.isArray(entregas)) _entregas = entregas;
-  const folha = dbGet('folha', null);
-  if(Array.isArray(folha)) S.folha = folha;
   const config = dbGet('config', null);
   if(config && typeof config==='object'){
     S.formula.custos = parseFloat(config.custos) || S.formula.custos;
@@ -2409,120 +2377,6 @@ async function syncFromServer(){
     }
   }catch{}
 }
-
-const LOCAL = {
-  login:(l,s,r) => {
-    const u=S.users.find(x=>x.ativo&&x.login===l&&x.senha===s&&x.role===r);
-    return u?{ok:true,user:{login:u.login,nome:u.nome,role:u.role}}:{ok:false,msg:'Credenciais invalidas'};
-  },
-  getUsuarios:  ()    => ({ok:true,data:S.users}),
-  getClientes:  ()    => ({ok:true,data:S.clientes}),
-  getTarefas:   ()    => ({ok:true,data:S.tasks}),
-  getBoletos:   (t)   => ({ok:true,data:(t==='pagar'||t==='forn')?S.boletos_p:(t==='receber'||t==='venda')?S.boletos_r:S.boletos_r}),
-  getMetas:     ()    => ({ok:true,data:S.metas}),
-  getProcessos: ()    => ({ok:true,data:S.processos}),
-  getConfig:    ()    => ({ok:true,data:{custos_fixos:S.formula.custos,taxa_cartao:S.formula.cartao}}),
-  getDashboard: ()    => {
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const vencidos = S.boletos_p.filter(b=>b.status!=='pago'&&new Date(b.vencimento+'T00:00:00')<=hoje);
-    const vencidosValor = vencidos.reduce((sum,b)=>sum+(parseFloat(b.valor)||0),0);
-    const tarefasPendentes = S.tasks.filter(t=>!(t.done===true||t.done==='true')).length;
-    const alertas = [];
-    if(vencidos.length) alertas.push({tipo:'danger',msg:'Boletos fornecedores vencidos',valor:vencidosValor});
-    const breves = S.boletos_p.filter(b=>b.status==='pendente'&&new Date(b.vencimento+'T00:00:00')>hoje&&new Date(b.vencimento+'T00:00:00')<=new Date(hoje.getTime()+2*86400000));
-    if(breves.length) alertas.push({tipo:'warn',msg:'Boletos em ate 2 dias',valor:breves.reduce((sum,b)=>sum+(parseFloat(b.valor)||0),0)});
-    const totalUber = _entregas.reduce((sum,e)=>sum+(parseFloat(e.valor_cobrado)||0),0) - _entregas.reduce((sum,e)=>sum+(parseFloat(e.valor_uber)||0),0);
-    return {ok:true,data:{valor_vencidos:vencidosValor,tarefas_pendentes:tarefasPendentes,boletos_vencidos:vencidos.length,alertas,lucro_uber_mes:totalUber}};
-  },
-  getEntregas:   ()    => ({ok:true,data:_entregas}),
-  getResumoUber: ()    => {
-    const total_cobrado = _entregas.reduce((sum,e)=>sum+(parseFloat(e.valor_cobrado)||0),0);
-    const total_uber    = _entregas.reduce((sum,e)=>sum+(parseFloat(e.valor_uber)||0),0);
-    return {ok:true,data:{total_entregas:_entregas.length,total_cobrado,total_uber,total_lucro:total_cobrado-total_uber}};
-  },
-  getFolha:      ()    => ({ok:true,data:S.folha}),
-  salvarConfig: (k,v) => { S.formula[k==='custos_fixos'?'custos':'cartao']=parseFloat(v); saveLocalData(); return {ok:true}; },
-  salvarUsuario:(u)   => {
-    if(u.id){const i=S.users.findIndex(x=>x.id===u.id);if(i>=0)S.users[i]={...S.users[i],...u};}
-    else{u.id='u'+Date.now();u.ativo=true;S.users.push(u);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerUsuario:(id) => { S.users=S.users.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  salvarCliente:(c)   => {
-    if(c.id){const i=S.clientes.findIndex(x=>x.id===c.id);if(i>=0)S.clientes[i]={...S.clientes[i],...c};}
-    else{c.id='c'+Date.now();c.ativo=true;S.clientes.push(c);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerCliente:(id)=> { S.clientes=S.clientes.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  salvarTarefa: (t)   => {
-    if(t.id){const i=S.tasks.findIndex(x=>x.id===t.id);if(i>=0)S.tasks[i]={...S.tasks[i],...t};}
-    else{t.id='t'+Date.now();S.tasks.push(t);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerTarefa:(id)  => { S.tasks=S.tasks.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  salvarBoleto: (b,t) => {
-    const a=t==='pagar'?S.boletos_p:S.boletos_r;
-    if(b.id){const i=a.findIndex(x=>x.id===b.id);if(i>=0)a[i]={...a[i],...b};}
-    else{b.id='b'+Date.now();a.push(b);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerBoleto:(id,t)=> {
-    if(t==='pagar')S.boletos_p=S.boletos_p.filter(x=>x.id!==id);
-    else S.boletos_r=S.boletos_r.filter(x=>x.id!==id);
-    saveLocalData();
-    return {ok:true};
-  },
-  salvarMeta:   (m)   => {
-    if(m.id){const i=S.metas.findIndex(x=>x.id===m.id);if(i>=0)S.metas[i]={...S.metas[i],...m};}
-    else{m.id='m'+Date.now();S.metas.push(m);}
-    saveLocalData();
-    return {ok:true};
-  },
-  salvarProcesso:(p)  => {
-    const now=new Date().toISOString().slice(0,10);
-    if(p.id){const i=S.processos.findIndex(x=>x.id===p.id);if(i>=0)S.processos[i]={...S.processos[i],...p,atualizadoEm:now};}
-    else{p.id='p'+Date.now();p.criadoEm=now;p.atualizadoEm=now;S.processos.push(p);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerProcesso:(id)=> { S.processos=S.processos.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  salvarEntrega:(e)=>{
-    if(e.id){const i=_entregas.findIndex(x=>x.id===e.id);if(i>=0)_entregas[i]={..._entregas[i],...e};}
-    else{e.id='u'+Date.now();_entregas.push(e);}
-    saveLocalData();
-    return {ok:true};
-  },
-  removerEntrega:(id)=> { _entregas=_entregas.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  salvarFolha:(f)=>{
-    const total=parseFloat(f.salario_base||0)+parseFloat(f.comissao||0)+parseFloat(f.bonus||0)-parseFloat(f.descontos||0);
-    if(f.id){const i=S.folha.findIndex(x=>x.id===f.id);if(i>=0)S.folha[i]={...S.folha[i],...f,total_liquido:total};}
-    else{f.id='f'+Date.now();f.total_liquido=total;S.folha.push(f);}
-    saveLocalData();
-    return {ok:true,data:{...f,total_liquido:total}};
-  },
-  removerFolha:(id)=>{ S.folha=S.folha.filter(x=>x.id!==id); saveLocalData(); return {ok:true}; },
-  gerarHolerite:(id)=>{
-    const f=S.folha.find(x=>x.id===id);
-    if(!f)return {ok:false,msg:'Folha nao encontrada'};
-    const total=parseFloat(f.salario_base||0)+parseFloat(f.comissao||0)+parseFloat(f.bonus||0)-parseFloat(f.descontos||0);
-    const html=`<div style="font-family:sans-serif;color:#111"><h2>Holerite de ${f.colaborador}</h2><p>Mes: ${f.mes}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><tr><td style="padding:8px;border:1px solid #ddd">Salario base</td><td style="padding:8px;border:1px solid #ddd">R$ ${total.toFixed(2)}</td></tr><tr><td style="padding:8px;border:1px solid #ddd">Comissao</td><td style="padding:8px;border:1px solid #ddd">R$ ${parseFloat(f.comissao||0).toFixed(2)}</td></tr><tr><td style="padding:8px;border:1px solid #ddd">Bonus</td><td style="padding:8px;border:1px solid #ddd">R$ ${parseFloat(f.bonus||0).toFixed(2)}</td></tr><tr><td style="padding:8px;border:1px solid #ddd">Descontos</td><td style="padding:8px;border:1px solid #ddd">R$ ${parseFloat(f.descontos||0).toFixed(2)}</td></tr><tr><td style="padding:8px;border:1px solid #ddd;font-weight:700">Total liquido</td><td style="padding:8px;border:1px solid #ddd;font-weight:700">R$ ${total.toFixed(2)}</td></tr></table></div>`;
-    return {ok:true,data:{...f,total_liquido:total},html};
-  },
-  consultarEstoqueTiny:(marca) => {
-    const DB={
-      'Impala':   [{nome:'Esmalte Impala Basico',sku:'IMP-001',estoque:4,vendaMensal:25},{nome:'Esmalte Impala Premium',sku:'IMP-002',estoque:18,vendaMensal:15},{nome:'Base Coat Impala',sku:'IMP-003',estoque:32,vendaMensal:10},{nome:'Top Coat Impala',sku:'IMP-004',estoque:12,vendaMensal:18},{nome:'Kit Manicure Impala',sku:'IMP-005',estoque:6,vendaMensal:20}],
-      'Real Love':[{nome:'Shampoo Real Love 1L',sku:'RL-001',estoque:22,vendaMensal:30},{nome:'Condicionador Real Love',sku:'RL-002',estoque:8,vendaMensal:28},{nome:'Mascara Real Love',sku:'RL-003',estoque:15,vendaMensal:12}],
-      'Koloss':   [{nome:'Tinta Koloss Preto',sku:'KL-001',estoque:40,vendaMensal:18},{nome:'Tinta Koloss Louro',sku:'KL-002',estoque:5,vendaMensal:22}],
-      'Colorama': [{nome:'Esmalte Colorama Classic',sku:'CL-001',estoque:28,vendaMensal:35},{nome:'Esmalte Colorama Neon',sku:'CL-002',estoque:3,vendaMensal:15}],
-    };
-    const prods=(DB[marca]||[]).map(p=>({...p,vendas60:p.vendaMensal*2,sugestao:Math.max(0,Math.ceil(p.vendaMensal*2-p.estoque)),cobertura:p.vendaMensal>0?Math.round(p.estoque/p.vendaMensal*30):999}));
-    return {ok:true,data:prods};
-  },
-};
 
 /* -- RBAC ------------------------------------------- */
 const PERMS = {
