@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_PATH  = path.join(ROOT, 'package.json');
-const HTML_PATH = path.join(ROOT, 'donna_hub_v3_index (6).html');
+const HTML_PATH = path.join(ROOT, 'index.html');
 
 // Lê versão atual
 const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf-8'));

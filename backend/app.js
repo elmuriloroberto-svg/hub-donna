@@ -178,7 +178,7 @@ app.use('/api/pedidos-manuais', apiLimiter, noCache, pedidosManuaisRoutes);
 
 // ── Frontend fallback ─────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../donna_hub_v3_index (6).html'));
+  res.sendFile(path.join(__dirname, '../index.html'));
 });
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
