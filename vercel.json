@@ -6,12 +6,7 @@
       "maxDuration": 60
     }
   },
-  "redirects": [
-    { "source": "/(.*)", "has": [{ "type": "host", "value": "www.hubdonnaunha.com" }], "destination": "https://hubdonnaunha.com/$1", "permanent": true },
-    { "source": "/(.*)", "has": [{ "type": "host", "value": "donnahubv3indexorganizado.vercel.app" }], "destination": "https://hubdonnaunha.com/$1", "permanent": true },
-    { "source": "/(.*)", "has": [{ "type": "host", "value": "donna-hub-donnaproject.vercel.app" }], "destination": "https://hubdonnaunha.com/$1", "permanent": true },
-    { "source": "/(.*)", "has": [{ "type": "host", "value": "donna-hub-git-main-donnaproject.vercel.app" }], "destination": "https://hubdonnaunha.com/$1", "permanent": true }
-  ],
+  "redirects": [],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
     { "source": "/encartes", "destination": "/estudio-encartes.html" },
