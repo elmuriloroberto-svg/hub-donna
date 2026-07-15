@@ -156,6 +156,17 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'API Donna Unha Hub v3.0' });
 });
 
+// TEMP DEBUG — remover antes do merge (como o commit A). Só contagens/comprimentos, NUNCA valores.
+app.get('/api/_debug_cors', (req, res) => {
+  res.json({
+    origins_count: ALLOWED_ORIGINS.length,
+    origins_lengths: ALLOWED_ORIGINS.map((o) => o.length),
+    has_env: !!process.env.ALLOWED_ORIGINS,
+    env_length: (process.env.ALLOWED_ORIGINS || '').length,
+    node_env: process.env.NODE_ENV || null,
+  });
+});
+
 // ── Rotas ─────────────────────────────────────────────────────────────────────
 app.use('/api/auth',      authLimiter, noCache, authRoutes);
 app.use('/api/db',        apiLimiter,  noCache, dbRoutes);
