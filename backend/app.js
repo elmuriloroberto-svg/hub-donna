@@ -156,13 +156,21 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: 'API Donna Unha Hub v3.0' });
 });
 
-// TEMP DEBUG — remover antes do merge (como o commit A). Só contagens/comprimentos, NUNCA valores.
+// TEMP DEBUG — remover antes do merge (como o commit A). Só presença/comprimentos, NUNCA valores.
 app.get('/api/_debug_cors', (req, res) => {
   res.json({
     origins_count: ALLOWED_ORIGINS.length,
     origins_lengths: ALLOWED_ORIGINS.map((o) => o.length),
     has_env: !!process.env.ALLOWED_ORIGINS,
     env_length: (process.env.ALLOWED_ORIGINS || '').length,
+    // env vars do login/boot — só booleans + comprimentos, NUNCA substring/prefixo/valor
+    has_supabase_url:    !!process.env.SUPABASE_URL,
+    supabase_url_length: (process.env.SUPABASE_URL || '').length,
+    has_service_key:     !!process.env.SUPABASE_SERVICE_KEY,
+    service_key_length:  (process.env.SUPABASE_SERVICE_KEY || '').length,
+    has_jwt_secret:      !!process.env.JWT_SECRET,
+    jwt_secret_length:   (process.env.JWT_SECRET || '').length,
+    has_jwt_expire:      !!process.env.JWT_EXPIRE_SECONDS,
     node_env: process.env.NODE_ENV || null,
   });
 });
