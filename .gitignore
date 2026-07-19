@@ -5,6 +5,9 @@
 node_modules/
 backend/node_modules/
 
+# Build do Vite (artefato — gerado na Vercel via vercel-build)
+dist/
+
 # Ambiente e segredos
 .env
 .env.local
