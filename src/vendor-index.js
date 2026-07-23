@@ -21,3 +21,11 @@ import '@fontsource/outfit/700.css';
 
 import '@fontsource/dm-sans/700.css';
 import '@fontsource/dm-sans/800.css';
+
+// Sub-etapa 2c: PapaParse via npm (era CDN cdnjs 5.4.1 no <head>).
+// 1º shim window.* do projeto: reexpõe Papa no escopo global para o monólito
+// clássico (index.html:2718, Papa.parse dentro do handler 'change' de epSetupCSV).
+// Único uso é em handler de evento — nunca no boot —, então o defer do módulo
+// resolve muito antes de qualquer seleção de CSV pelo usuário.
+import Papa from 'papaparse';
+window.Papa = Papa;
