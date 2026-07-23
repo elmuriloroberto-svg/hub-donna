@@ -49,7 +49,7 @@ if (!isProd) {
 
 // Aceita qualquer URL de deploy do projeto donna-hub no Vercel (deploy único e alias).
 // Padrões: donna-hub.vercel.app, donnahub*.vercel.app, donna-*-donnaproject.vercel.app
-const VERCEL_ORIGIN_RE = /^https:\/\/(donna-hub|donnahub[^.]*|donna-[a-z0-9]+-donnaproject)\.vercel\.app$/;
+const VERCEL_ORIGIN_RE = /^https:\/\/(donna-hub|donnahub[^.]*|donna-[a-z0-9-]+-donnaproject)\.vercel\.app$/;
 
 // Domínio próprio do Hub (com e sem www) — hardcoded pra não depender da env
 // var ALLOWED_ORIGINS estar atualizada no dashboard do Vercel.
